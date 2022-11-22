@@ -1,0 +1,12 @@
+{
+  "ID": "my-service1",
+  "Name": "my-service",
+  "Tags": ["v1"],
+  "Address": "127.0.0.1",
+  "Port": 8000,
+  "EnableTagOverride": true,
+  "Weights": {
+    "Passing": 10,
+    "Warning": 1
+  }
+}
