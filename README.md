@@ -32,7 +32,19 @@ INFO[0010] running command                               command=./examples/tagi
 INFO[0015] running command                               command=./examples/tagit/example.sh service=my-service1
 $ ./tagit cleanup --consul-addr=127.0.0.1:8500 --service-id=my-service1 --tag-prefix=tagit
 INFO[0000] current service tags                          service=my-service1 tags="[v1 tagit-nice tagit-it tagit-works]"
-INFO[0000] updating service tags                         service=my-service1 tags="[v1 tagit-nice tagit-it tagit-works]"
+INFO[0000] updating service tags                         service=my-service1 tags="[v1]"
+```
+
+
+```mermaid
+sequenceDiagram
+    participant tagit
+    participant consul
+    loop execute script on interval
+        tagit->>consul: Do you have a service with id my-service1?
+        consul->>tagit: Yes, here it is and that's the current registration
+        tagit->>consul: Update current registration adding or removing prefixed tags wiht the output of the script
+    end
 ```
 
 ### Todo
