@@ -86,7 +86,6 @@ to quickly create a Cobra application.`,
 func init() {
 	rootCmd.AddCommand(runCmd)
 
-	runCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.tagit.yaml)")
 	runCmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
 	runCmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
 	runCmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")

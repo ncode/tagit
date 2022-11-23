@@ -47,20 +47,21 @@ func (t *TagIt) Run() {
 		err := t.updateServiceTags()
 		if err != nil {
 			log.WithFields(log.Fields{
-				"caller": "Run",
-				"error":  err,
+				"service": t.ServiceID,
+				"error":   err,
 			}).Error("error updating service tags")
 		}
 		time.Sleep(t.Interval)
 	}
 }
 
-// runCommand runs a command and returns the output.
-func runCommand(command string) ([]byte, error) {
+// runScript runs a command and returns the output.
+func (t *TagIt) runScript() ([]byte, error) {
 	log.WithFields(log.Fields{
-		"caller": "runCommand",
-	}).Info("Running command: ", command)
-	args, err := shlex.Split(command)
+		"service": t.ServiceID,
+		"command": t.Script,
+	}).Info("running command")
+	args, err := shlex.Split(t.Script)
 	if err != nil {
 		return nil, err
 	}
@@ -76,23 +77,23 @@ func (t *TagIt) updateServiceTags() error {
 	}
 	registration := t.copyServiceToRegistration(service)
 	log.WithFields(log.Fields{
-		"caller":  "updateServiceTags",
 		"service": t.ServiceID,
 		"tags":    registration.Tags,
 	}).Debug("current service tags")
-	out, err := runCommand(t.Script)
+	out, err := t.runScript()
 	if err != nil {
 		return err
 	}
+
 	var tags []string
 	for _, tag := range strings.Fields(string(out)) {
 		tags = append(tags, fmt.Sprintf("%s-%s", t.TagPrefix, tag))
 	}
+
 	diff, shouldTag := t.needsTag(registration.Tags, tags)
 	if shouldTag {
 		registration.Tags = append(diff, tags...)
 		log.WithFields(log.Fields{
-			"caller":  "updateServiceTags",
 			"service": t.ServiceID,
 			"tags":    registration.Tags,
 		}).Info("updating service tags")
@@ -102,10 +103,37 @@ func (t *TagIt) updateServiceTags() error {
 		}
 	} else {
 		log.WithFields(log.Fields{
-			"caller":  "updateServiceTags",
 			"service": t.ServiceID,
 			"tags":    registration.Tags,
 		}).Debug("no changes to service tags")
+	}
+
+	return err
+}
+
+// CleanupServiceTags cleans up the service tags added by tagit.
+func (t *TagIt) CleanupServiceTags() error {
+	service, err := t.getService()
+	if err != nil {
+		return err
+	}
+	registration := t.copyServiceToRegistration(service)
+	log.WithFields(log.Fields{
+		"service": t.ServiceID,
+		"tags":    registration.Tags,
+	}).Info("current service tags")
+
+	filteredTags, tagged := t.excludeTagged(registration.Tags)
+	if tagged {
+		log.WithFields(log.Fields{
+			"service": t.ServiceID,
+			"tags":    registration.Tags,
+		}).Info("updating service tags")
+		registration.Tags = filteredTags
+		err = t.client.Agent().ServiceRegister(registration)
+		if err != nil {
+			return err
+		}
 	}
 
 	return err
@@ -132,16 +160,18 @@ func (t *TagIt) getService() (service *api.AgentService, err error) {
 	if err != nil {
 		return service, err
 	}
+
 	service, ok := services[t.ServiceID]
 	if !ok {
 		return service, fmt.Errorf("service %s not found", t.ServiceID)
 	}
+
 	return service, err
 }
 
 func (t *TagIt) needsTag(current []string, update []string) (filteredTags []string, shouldTag bool) {
 	diff := t.compareTags(current, update)
-	filteredTags, tagged := t.filterTagged(current)
+	filteredTags, tagged := t.excludeTagged(current)
 	if !tagged {
 		return filteredTags, true
 	}
@@ -150,16 +180,17 @@ func (t *TagIt) needsTag(current []string, update []string) (filteredTags []stri
 		return filteredTags, true
 	}
 
-	_, shouldTag = t.filterTagged(diff)
+	_, shouldTag = t.excludeTagged(diff)
 
 	return filteredTags, shouldTag
 }
 
-// filterTagged filters out tags that are already tagged with the prefix.
-func (t *TagIt) filterTagged(tags []string) (filteredTags []string, tagged bool) {
+// excludeTagged filters out tags that are already tagged with the prefix.
+func (t *TagIt) excludeTagged(tags []string) (filteredTags []string, tagged bool) {
 	for _, tag := range tags {
-		if !strings.Contains(tag, t.TagPrefix) {
+		if strings.Contains(tag, t.TagPrefix) {
 			tagged = true
+		} else {
 			filteredTags = append(filteredTags, tag)
 		}
 	}
