@@ -41,6 +41,7 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
+	runCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.tagit.yaml)")
 }
 
 // initConfig reads in config file and ENV variables if set.
