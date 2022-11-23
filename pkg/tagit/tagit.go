@@ -127,7 +127,7 @@ func (t *TagIt) CleanupServiceTags() error {
 	if tagged {
 		log.WithFields(log.Fields{
 			"service": t.ServiceID,
-			"tags":    registration.Tags,
+			"tags":    filteredTags,
 		}).Info("updating service tags")
 		registration.Tags = filteredTags
 		err = t.client.Agent().ServiceRegister(registration)
