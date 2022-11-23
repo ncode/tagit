@@ -1,9 +1,10 @@
-## TagIt
+# TagIt 
+[![Go Report Card](https://goreportcard.com/badge/github.com/ncode/tagit)](https://goreportcard.com/report/github.com/ncode/tagit)
 
 Update consul registration tags with outputs of a script.
 It copies the current service registration and appends the output of the script line by line as tags, while keeping the original tags.
 
-### Why?
+## Why?
 
 Basically because it's a very useful feature that is missing from consul. Read more about it [here](https://github.com/hashicorp/consul/issues/1048).
 A few scenarios where this can be useful:
@@ -17,7 +18,7 @@ A few scenarios where this can be useful:
 4. Pretty much any services that are not consul aware, but you would like to use consul for service discovery
    1. You run a script that checks the service and updates the tags
 
-### How to test it?
+## How to test it?
 
 ```bash
 $ git clone github.com/ncode/tagit
@@ -35,7 +36,7 @@ INFO[0000] current service tags                          service=my-service1 tag
 INFO[0000] updating service tags                         service=my-service1 tags="[v1 tagit-nice tagit-it tagit-works]"
 ```
 
-### Todo
+## Todo
 
 - [ ] Adds support for multiple services (currently only supports one service)
 - [ ] Adds a systemd unit file generator
