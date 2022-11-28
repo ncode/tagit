@@ -27,13 +27,11 @@ import (
 // runCmd represents the run command
 var runCmd = &cobra.Command{
 	Use:   "run",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
+	Short: "Run tagit to add tags to a given consul service based on a script output",
+	Long: `Run tagit to add tags to a given consul service based on a script output.
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
+`,
 	Run: func(cmd *cobra.Command, args []string) {
 		consulAddr := cmd.PersistentFlags().Lookup("consul-addr").Value.String()
 		serviceID := cmd.PersistentFlags().Lookup("service-id").Value.String()
@@ -49,11 +47,6 @@ to quickly create a Cobra application.`,
 
 		if script == "" {
 			fmt.Println("script is required")
-			os.Exit(1)
-		}
-
-		if tagPrefix == "" {
-			fmt.Println("tag-prefix is required")
 			os.Exit(1)
 		}
 
@@ -89,7 +82,7 @@ func init() {
 	runCmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
 	runCmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
 	runCmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
-	runCmd.PersistentFlags().StringP("tag-prefix", "p", "", "prefix to be added to tags")
+	runCmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
 	runCmd.PersistentFlags().StringP("interval", "i", "60s", "interval to run the script")
 	runCmd.PersistentFlags().StringP("token", "t", "", "consul token")
 }
