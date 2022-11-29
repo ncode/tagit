@@ -72,6 +72,7 @@ example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 			fmt.Printf("error creating tagit: %s", err.Error())
 			os.Exit(1)
 		}
+		defer t.CleanupServiceTags()
 		t.Run()
 	},
 }
@@ -83,6 +84,7 @@ func init() {
 	runCmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
 	runCmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
 	runCmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
-	runCmd.PersistentFlags().StringP("interval", "i", "60s", "interval to run the script")
+	runCmd.PersistentFlags().StringP("interval", "i", "5s", "interval to run the script")
 	runCmd.PersistentFlags().StringP("token", "t", "", "consul token")
+	runCmd.PersistentFlags().BoolP("auto-cleanup", "a", true, "enable or disable the best effort to auto cleanup the tags before stopping the service")
 }
