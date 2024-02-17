@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/consul/api"
 )
@@ -286,5 +287,37 @@ func TestRunScript(t *testing.T) {
 				t.Errorf("runScript() got = %v, want %v", string(output), tt.wantOutput)
 			}
 		})
+	}
+}
+
+// MockConsulClient is a mock implementation of the ConsulClient interface
+type MockConsulClient struct{}
+
+// TODO: Implement the Agent method properly so that we can test the rest of the methods
+func (m *MockConsulClient) Agent() *api.Agent {
+	// Return a mock *api.Agent if needed
+	return &api.Agent{}
+}
+
+func TestNew(t *testing.T) {
+	// Create mock dependencies
+	mockConsulClient := &MockConsulClient{}
+	mockCommandExecutor := &MockCommandExecutor{}
+
+	// Call New with mock dependencies
+	tagit := New(mockConsulClient, mockCommandExecutor, "test-service", "echo test", 30*time.Second, "test-prefix")
+
+	// Validate the returned TagIt instance
+	if tagit == nil {
+		t.Fatalf("New() returned nil")
+	}
+	if tagit.client == nil {
+		t.Errorf("TagIt client is nil")
+	}
+	if tagit.commandExecutor == nil {
+		t.Errorf("TagIt commandExecutor is nil")
+	}
+	if tagit.ServiceID != "test-service" {
+		t.Errorf("Expected ServiceID to be 'test-service', got '%s'", tagit.ServiceID)
 	}
 }

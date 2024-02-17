@@ -19,8 +19,13 @@ type TagIt struct {
 	Interval        time.Duration
 	Token           string
 	TagPrefix       string
-	client          *api.Client
+	client          ConsulClient
 	commandExecutor CommandExecutor
+}
+
+// ConsulClient is an interface for the Consul client.
+type ConsulClient interface {
+	Agent() *api.Agent
 }
 
 // CommandExecutor is an interface for running commands.
@@ -28,9 +33,9 @@ type CommandExecutor interface {
 	Execute(command string) ([]byte, error)
 }
 
-type commandCommandExecutor struct{}
+type CmdExecutor struct{}
 
-func (e *commandCommandExecutor) Execute(command string) ([]byte, error) {
+func (e *CmdExecutor) Execute(command string) ([]byte, error) {
 	args, err := shlex.Split(command)
 	if err != nil {
 		return nil, err
@@ -39,24 +44,15 @@ func (e *commandCommandExecutor) Execute(command string) ([]byte, error) {
 }
 
 // New creates a new TagIt struct.
-func New(consulAddr string, serviceID string, script string, interval time.Duration, token string, tagPrefix string) (t *TagIt, err error) {
-	t = &TagIt{
-		ConsulAddr:      consulAddr,
+func New(consulClient ConsulClient, commandExecutor CommandExecutor, serviceID string, script string, interval time.Duration, tagPrefix string) *TagIt {
+	return &TagIt{
 		ServiceID:       serviceID,
 		Script:          script,
 		Interval:        interval,
-		Token:           token,
 		TagPrefix:       tagPrefix,
-		commandExecutor: &commandCommandExecutor{},
+		client:          consulClient,
+		commandExecutor: commandExecutor,
 	}
-	config := api.DefaultConfig()
-	config.Address = t.ConsulAddr
-	config.Token = t.Token
-	t.client, err = api.NewClient(config)
-	if err != nil {
-		return t, err
-	}
-	return t, err
 }
 
 // Run will run the tagit flow and tag consul services based on the script output
