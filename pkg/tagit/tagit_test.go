@@ -1,6 +1,7 @@
 package tagit
 
 import (
+	"fmt"
 	"reflect"
 	"slices"
 	"testing"
@@ -222,6 +223,67 @@ func TestCopyServiceToRegistration(t *testing.T) {
 
 			if !reflect.DeepEqual(reg, tt.expectedReg) {
 				t.Errorf("copyServiceToRegistration() got = %v, want %v", reg, tt.expectedReg)
+			}
+		})
+	}
+}
+
+type MockCommandExecutor struct {
+	MockOutput []byte
+	MockError  error
+}
+
+func (m *MockCommandExecutor) Execute(command string) ([]byte, error) {
+	return m.MockOutput, m.MockError
+}
+
+func TestRunScript(t *testing.T) {
+	tests := []struct {
+		name       string
+		script     string
+		mockOutput string
+		mockError  error
+		wantOutput string
+		wantErr    bool
+	}{
+		{
+			name:       "Valid Command",
+			script:     "echo test",
+			mockOutput: "test\n",
+			wantOutput: "test\n",
+			wantErr:    false,
+		},
+		{
+			name:      "Invalid Command",
+			script:    "someinvalidcommand",
+			mockError: fmt.Errorf("command failed"),
+			wantErr:   true,
+		},
+		{
+			name:       "Empty Command",
+			script:     "",
+			mockOutput: "",
+			wantOutput: "",
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockExecutor := &MockCommandExecutor{
+				MockOutput: []byte(tt.mockOutput),
+				MockError:  tt.mockError,
+			}
+			tagit := TagIt{Script: tt.script, commandExecutor: mockExecutor}
+
+			output, err := tagit.runScript()
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("runScript() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if string(output) != tt.wantOutput {
+				t.Errorf("runScript() got = %v, want %v", string(output), tt.wantOutput)
 			}
 		})
 	}
