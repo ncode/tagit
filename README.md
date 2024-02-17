@@ -1,5 +1,8 @@
 # TagIt 
 [![Go Report Card](https://goreportcard.com/badge/github.com/ncode/tagit)](https://goreportcard.com/report/github.com/ncode/tagit)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![codecov](https://codecov.io/gh/ncode/tagit/graph/badge.svg?token=ISXEH274YD)](https://codecov.io/gh/ncode/tagit)
+
 
 Update consul registration tags with outputs of a script.
 It copies the current service registration and appends the output of the script line by line as tags, while keeping the original tags.
