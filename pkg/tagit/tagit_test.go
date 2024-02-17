@@ -4,9 +4,11 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/hashicorp/consul/api"
 )
 
-func TestCompareTags(t *testing.T) {
+func TestDiffTags(t *testing.T) {
 	tests := []struct {
 		name     string
 		current  []string
@@ -48,7 +50,7 @@ func TestCompareTags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tagit := TagIt{} // Assuming TagIt doesn't require initialization for compareTags
-			diff := tagit.compareTags(tt.current, tt.update)
+			diff := tagit.diffTags(tt.current, tt.update)
 			if (len(diff) == 0) && (len(tt.expected) == 0) {
 				return
 			}
@@ -113,6 +115,113 @@ func TestExcludeTagged(t *testing.T) {
 
 			if slices.Compare(filteredTags, tt.expected) != 0 || tagged != tt.shouldTag {
 				t.Errorf("excludeTagged() = %v, %v, want %v, %v", filteredTags, tagged, tt.expected, tt.shouldTag)
+			}
+		})
+	}
+}
+
+func TestNeedsTag(t *testing.T) {
+	tests := []struct {
+		name           string
+		current        []string
+		update         []string
+		expectedTags   []string
+		expectedShould bool
+	}{
+		{
+			name:           "No Update Needed",
+			current:        []string{"tag-tag1", "tag-tag2", "tag-tag3"},
+			update:         []string{"tag-tag1", "tag-tag2", "tag-tag3"},
+			expectedTags:   []string{},
+			expectedShould: false,
+		},
+		{
+			name:           "Update Needed",
+			current:        []string{"tag-tag1", "tag-tag2"},
+			update:         []string{"tag-tag1", "tag-tag2", "tag3"},
+			expectedTags:   []string{"tag3"},
+			expectedShould: true,
+		},
+		{
+			name:           "All New Tags",
+			current:        []string{},
+			update:         []string{"tag1", "tag2", "tag3"},
+			expectedTags:   []string{"tag1", "tag2", "tag3"},
+			expectedShould: true,
+		},
+		{
+			name:           "Current Tags Removed",
+			current:        []string{"tag-tag1", "tag2", "tag3"},
+			update:         []string{},
+			expectedTags:   []string{"tag2", "tag3"},
+			expectedShould: true,
+		},
+		{
+			name:           "Mixed Changes",
+			current:        []string{"tag-tag1", "tag2", "tag4"},
+			update:         []string{"tag2", "tag3", "tag5"},
+			expectedTags:   []string{"tag4", "tag3", "tag5"},
+			expectedShould: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tagit := TagIt{TagPrefix: "tag"} // Assuming TagPrefix is set for needsTag
+			filteredTags, shouldTag := tagit.needsTag(tt.current, tt.update)
+			//fmt.Println(filteredTags, shouldTag)
+
+			if slices.Compare(filteredTags, tt.expectedTags) != 0 || shouldTag != tt.expectedShould {
+				t.Errorf("needsTag() = %v, %v, want %v, %v", filteredTags, shouldTag, tt.expectedTags, tt.expectedShould)
+			}
+		})
+	}
+}
+
+func TestCopyServiceToRegistration(t *testing.T) {
+	tests := []struct {
+		name        string
+		service     *api.AgentService
+		expectedReg *api.AgentServiceRegistration
+	}{
+		{
+			name: "Copy All Fields",
+			service: &api.AgentService{
+				ID:      "service-1",
+				Service: "test-service",
+				Tags:    []string{"tag1", "tag2"},
+				Port:    8080,
+				Address: "127.0.0.1",
+				Kind:    api.ServiceKindTypical,
+				Weights: api.AgentWeights{
+					Passing: 10,
+					Warning: 1,
+				},
+				Meta: map[string]string{"version": "1.0"},
+			},
+			expectedReg: &api.AgentServiceRegistration{
+				ID:      "service-1",
+				Name:    "test-service",
+				Tags:    []string{"tag1", "tag2"},
+				Port:    8080,
+				Address: "127.0.0.1",
+				Kind:    api.ServiceKindTypical,
+				Weights: &api.AgentWeights{
+					Passing: 10,
+					Warning: 1,
+				},
+				Meta: map[string]string{"version": "1.0"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tagit := TagIt{}
+			reg := tagit.copyServiceToRegistration(tt.service)
+
+			if !reflect.DeepEqual(reg, tt.expectedReg) {
+				t.Errorf("copyServiceToRegistration() got = %v, want %v", reg, tt.expectedReg)
 			}
 		})
 	}
