@@ -91,9 +91,9 @@ func (t *TagIt) updateServiceTags() error {
 		tags = append(tags, fmt.Sprintf("%s-%s", t.TagPrefix, tag))
 	}
 
-	diff, shouldTag := t.needsTag(registration.Tags, tags)
+	updatedTags, shouldTag := t.needsTag(registration.Tags, tags)
 	if shouldTag {
-		registration.Tags = append(diff, tags...)
+		registration.Tags = updatedTags
 		log.WithFields(log.Fields{
 			"service": t.ServiceID,
 			"tags":    registration.Tags,
@@ -170,20 +170,16 @@ func (t *TagIt) getService() (service *api.AgentService, err error) {
 	return service, err
 }
 
-func (t *TagIt) needsTag(current []string, update []string) (filteredTags []string, shouldTag bool) {
-	diff := t.compareTags(current, update)
-	filteredTags, tagged := t.excludeTagged(current)
-	if !tagged {
-		return filteredTags, true
+// needsTag checks if the service needs to be tagged. Based of the diff of the current and updated tags, filtering out tags that are already tagged.
+// but we never override the original tags from the consul service registration
+func (t *TagIt) needsTag(current []string, update []string) (updatedTags []string, shouldTag bool) {
+	diff := t.diffTags(current, update)
+	if len(diff) == 0 {
+		return nil, false
 	}
 
-	if len(append(update, diff...)) != len(current) {
-		return filteredTags, true
-	}
-
-	_, shouldTag = t.excludeTagged(diff)
-
-	return filteredTags, shouldTag
+	updatedTags, _ = t.excludeTagged(diff)
+	return updatedTags, true
 }
 
 // excludeTagged filters out tags that are already tagged with the prefix.
@@ -199,8 +195,8 @@ func (t *TagIt) excludeTagged(tags []string) (filteredTags []string, tagged bool
 	return filteredTags, tagged
 }
 
-// compareTags compares two slices of strings and returns the difference.
-func (t *TagIt) compareTags(current []string, update []string) []string {
+// diffTags compares two slices of strings and returns the difference.
+func (t *TagIt) diffTags(current []string, update []string) []string {
 	tagMap := make(map[string]bool)
 	var diff []string
 
