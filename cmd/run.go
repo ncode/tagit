@@ -17,9 +17,11 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/ncode/tagit/pkg/tagit"
 	"os"
 	"time"
+
+	"github.com/hashicorp/consul/api"
+	"github.com/ncode/tagit/pkg/tagit"
 
 	"github.com/spf13/cobra"
 )
@@ -33,12 +35,10 @@ var runCmd = &cobra.Command{
 example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		consulAddr := cmd.PersistentFlags().Lookup("consul-addr").Value.String()
 		serviceID := cmd.PersistentFlags().Lookup("service-id").Value.String()
 		script := cmd.PersistentFlags().Lookup("script").Value.String()
 		tagPrefix := cmd.PersistentFlags().Lookup("tag-prefix").Value.String()
 		interval := cmd.PersistentFlags().Lookup("interval").Value.String()
-		token := cmd.PersistentFlags().Lookup("token").Value.String()
 
 		if serviceID == "" {
 			fmt.Println("service-id is required")
@@ -55,23 +55,22 @@ example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 			os.Exit(1)
 		}
 
-		i, err := time.ParseDuration(interval)
+		validInterval, err := time.ParseDuration(interval)
 		if err != nil {
 			fmt.Printf("invalid interval %s: %s", interval, err.Error())
 			os.Exit(1)
 		}
 
-		t, err := tagit.New(
-			consulAddr,
-			serviceID,
-			script,
-			i,
-			token,
-			tagPrefix)
+		config := api.DefaultConfig()
+		config.Address = cmd.PersistentFlags().Lookup("consul-addr").Value.String()
+		config.Token = cmd.PersistentFlags().Lookup("token").Value.String()
+		consulClient, err := api.NewClient(config)
 		if err != nil {
-			fmt.Printf("error creating tagit: %s", err.Error())
+			fmt.Printf("error creating consul client: %s", err.Error())
 			os.Exit(1)
 		}
+
+		t := tagit.New(consulClient, &tagit.CmdExecutor{}, serviceID, script, validInterval, tagPrefix)
 		t.Run()
 	},
 }
