@@ -60,3 +60,60 @@ func TestCompareTags(t *testing.T) {
 		})
 	}
 }
+
+func TestExcludeTagged(t *testing.T) {
+	tests := []struct {
+		name      string
+		tags      []string
+		tagPrefix string
+		expected  []string
+		shouldTag bool
+	}{
+		{
+			name:      "No Tags With Prefix",
+			tags:      []string{"alpha", "beta", "gamma"},
+			tagPrefix: "tag",
+			expected:  []string{"alpha", "beta", "gamma"},
+			shouldTag: false,
+		},
+		{
+			name:      "All Tags With Prefix",
+			tags:      []string{"tag-alpha", "tag-beta", "tag-gamma"},
+			tagPrefix: "tag",
+			expected:  []string{},
+			shouldTag: true,
+		},
+		{
+			name:      "Some Tags With Prefix",
+			tags:      []string{"alpha", "tag-beta", "gamma"},
+			tagPrefix: "tag",
+			expected:  []string{"alpha", "gamma"},
+			shouldTag: true,
+		},
+		{
+			name:      "Empty Tags",
+			tags:      []string{},
+			tagPrefix: "tag",
+			expected:  []string{},
+			shouldTag: false,
+		},
+		{
+			name:      "Prefix in Middle",
+			tags:      []string{"alpha-tag", "beta", "gamma"},
+			tagPrefix: "tag",
+			expected:  []string{"alpha-tag", "beta", "gamma"},
+			shouldTag: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tagit := TagIt{TagPrefix: tt.tagPrefix}
+			filteredTags, tagged := tagit.excludeTagged(tt.tags)
+
+			if slices.Compare(filteredTags, tt.expected) != 0 || tagged != tt.shouldTag {
+				t.Errorf("excludeTagged() = %v, %v, want %v, %v", filteredTags, tagged, tt.expected, tt.shouldTag)
+			}
+		})
+	}
+}
