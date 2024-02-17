@@ -13,24 +13,41 @@ import (
 
 // TagIt is the main struct for the tagit flow.
 type TagIt struct {
-	ConsulAddr string
-	ServiceID  string
-	Script     string
-	Interval   time.Duration
-	Token      string
-	TagPrefix  string
-	client     *api.Client
+	ConsulAddr      string
+	ServiceID       string
+	Script          string
+	Interval        time.Duration
+	Token           string
+	TagPrefix       string
+	client          *api.Client
+	commandExecutor CommandExecutor
+}
+
+// CommandExecutor is an interface for running commands.
+type CommandExecutor interface {
+	Execute(command string) ([]byte, error)
+}
+
+type commandCommandExecutor struct{}
+
+func (e *commandCommandExecutor) Execute(command string) ([]byte, error) {
+	args, err := shlex.Split(command)
+	if err != nil {
+		return nil, err
+	}
+	return exec.Command(args[0], args[1:]...).Output()
 }
 
 // New creates a new TagIt struct.
 func New(consulAddr string, serviceID string, script string, interval time.Duration, token string, tagPrefix string) (t *TagIt, err error) {
 	t = &TagIt{
-		ConsulAddr: consulAddr,
-		ServiceID:  serviceID,
-		Script:     script,
-		Interval:   interval,
-		Token:      token,
-		TagPrefix:  tagPrefix,
+		ConsulAddr:      consulAddr,
+		ServiceID:       serviceID,
+		Script:          script,
+		Interval:        interval,
+		Token:           token,
+		TagPrefix:       tagPrefix,
+		commandExecutor: &commandCommandExecutor{},
 	}
 	config := api.DefaultConfig()
 	config.Address = t.ConsulAddr
@@ -62,12 +79,7 @@ func (t *TagIt) runScript() ([]byte, error) {
 		"service": t.ServiceID,
 		"command": t.Script,
 	}).Info("running command")
-	args, err := shlex.Split(t.Script)
-	if err != nil {
-		return nil, err
-	}
-	cmd := exec.Command(args[0], args[1:]...)
-	return cmd.Output()
+	return t.commandExecutor.Execute(t.Script)
 }
 
 // updateServiceTags updates the service tags.
