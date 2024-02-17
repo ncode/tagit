@@ -201,23 +201,37 @@ func (t *TagIt) excludeTagged(tags []string) (filteredTags []string, tagged bool
 
 // compareTags compares two slices of strings and returns the difference.
 func (t *TagIt) compareTags(current []string, update []string) []string {
+	tagMap := make(map[string]bool)
 	var diff []string
-	for i := 0; i < 2; i++ {
-		for _, s1 := range current {
-			found := false
-			for _, s2 := range update {
-				if s1 == s2 {
-					found = true
-					break
-				}
-			}
-			if !found {
-				diff = append(diff, s1)
-			}
-		}
-		if i == 0 {
-			current, update = update, current
+
+	// Map each tag in the update slice to true
+	for _, tag := range update {
+		tagMap[tag] = true
+	}
+
+	// Add tags from current that are not in update
+	for _, tag := range current {
+		if _, found := tagMap[tag]; !found {
+			diff = append(diff, tag)
 		}
 	}
+
+	// Reset the map for reuse
+	for k := range tagMap {
+		delete(tagMap, k)
+	}
+
+	// Map each tag in the current slice to true
+	for _, tag := range current {
+		tagMap[tag] = true
+	}
+
+	// Add tags from update that are not in current
+	for _, tag := range update {
+		if _, found := tagMap[tag]; !found {
+			diff = append(diff, tag)
+		}
+	}
+
 	return diff
 }
