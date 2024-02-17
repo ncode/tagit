@@ -2,12 +2,13 @@ package tagit
 
 import (
 	"fmt"
-	"github.com/google/shlex"
-	"github.com/hashicorp/consul/api"
-	log "github.com/sirupsen/logrus"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/google/shlex"
+	"github.com/hashicorp/consul/api"
+	log "github.com/sirupsen/logrus"
 )
 
 // TagIt is the main struct for the tagit flow.
@@ -188,7 +189,8 @@ func (t *TagIt) needsTag(current []string, update []string) (filteredTags []stri
 // excludeTagged filters out tags that are already tagged with the prefix.
 func (t *TagIt) excludeTagged(tags []string) (filteredTags []string, tagged bool) {
 	for _, tag := range tags {
-		if strings.Contains(tag, t.TagPrefix) {
+		// Using HasPrefix for a more accurate prefix check
+		if strings.HasPrefix(tag, t.TagPrefix+"-") {
 			tagged = true
 		} else {
 			filteredTags = append(filteredTags, tag)
