@@ -106,16 +106,13 @@ func (t *TagIt) updateServiceTags() error {
 			"service": t.ServiceID,
 			"tags":    registration.Tags,
 		}).Info("updating service tags")
-		err = t.client.Agent().ServiceRegister(registration)
-		if err != nil {
-			return err
-		}
-	} else {
-		log.WithFields(log.Fields{
-			"service": t.ServiceID,
-			"tags":    registration.Tags,
-		}).Debug("no changes to service tags")
+		return t.client.Agent().ServiceRegister(registration)
 	}
+
+	log.WithFields(log.Fields{
+		"service": t.ServiceID,
+		"tags":    registration.Tags,
+	}).Debug("no changes to service tags")
 
 	return err
 }
