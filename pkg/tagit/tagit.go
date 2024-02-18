@@ -147,34 +147,6 @@ func (t *TagIt) parseScriptOutput(output []byte) []string {
 	return tags
 }
 
-// CleanupServiceTags cleans up the service tags added by tagit.
-func (t *TagIt) CleanupServiceTags() error {
-	service, err := t.getService()
-	if err != nil {
-		return err
-	}
-	registration := t.copyServiceToRegistration(service)
-	log.WithFields(log.Fields{
-		"service": t.ServiceID,
-		"tags":    registration.Tags,
-	}).Info("current service tags")
-
-	filteredTags, tagged := t.excludeTagged(registration.Tags)
-	if tagged {
-		log.WithFields(log.Fields{
-			"service": t.ServiceID,
-			"tags":    filteredTags,
-		}).Info("updating service tags")
-		registration.Tags = filteredTags
-		err = t.client.Agent().ServiceRegister(registration)
-		if err != nil {
-			return err
-		}
-	}
-
-	return err
-}
-
 // Copy *api.AgentService to *api.AgentServiceRegistration
 func (t *TagIt) copyServiceToRegistration(service *api.AgentService) *api.AgentServiceRegistration {
 	return &api.AgentServiceRegistration{
