@@ -88,39 +88,48 @@ func (t *TagIt) runScript() ([]byte, error) {
 func (t *TagIt) updateServiceTags() error {
 	service, err := t.getService()
 	if err != nil {
-		return err
+		return fmt.Errorf("error getting service: %w", err)
 	}
-	registration := t.copyServiceToRegistration(service)
-	log.WithFields(log.Fields{
-		"service": t.ServiceID,
-		"tags":    registration.Tags,
-	}).Debug("current service tags")
+
+	newTags, err := t.generateNewTags()
+	if err != nil {
+		return fmt.Errorf("error generating new tags: %w", err)
+	}
+
+	if err := t.updateConsulService(service, newTags); err != nil {
+		return fmt.Errorf("error updating service in Consul: %w", err)
+	}
+
+	return nil
+}
+
+// generateNewTags runs the script and generates new tags.
+func (t *TagIt) generateNewTags() ([]string, error) {
 	out, err := t.runScript()
 	if err != nil {
-		return err
+		return nil, err
 	}
+	return t.parseScriptOutput(out), nil
+}
 
-	var tags []string
-	for _, tag := range strings.Fields(string(out)) {
-		tags = append(tags, fmt.Sprintf("%s-%s", t.TagPrefix, tag))
-	}
-
-	updatedTags, shouldTag := t.needsTag(registration.Tags, tags)
+// updateConsulService updates the service in Consul with the new tags.
+func (t *TagIt) updateConsulService(service *api.AgentService, newTags []string) error {
+	registration := t.copyServiceToRegistration(service)
+	updatedTags, shouldTag := t.needsTag(registration.Tags, newTags)
 	if shouldTag {
 		registration.Tags = updatedTags
-		log.WithFields(log.Fields{
-			"service": t.ServiceID,
-			"tags":    registration.Tags,
-		}).Info("updating service tags")
 		return t.client.Agent().ServiceRegister(registration)
 	}
+	return nil
+}
 
-	log.WithFields(log.Fields{
-		"service": t.ServiceID,
-		"tags":    registration.Tags,
-	}).Debug("no changes to service tags")
-
-	return err
+// parseScriptOutput parses the script output and generates tags.
+func (t *TagIt) parseScriptOutput(output []byte) []string {
+	var tags []string
+	for _, tag := range strings.Fields(string(output)) {
+		tags = append(tags, fmt.Sprintf("%s-%s", t.TagPrefix, tag))
+	}
+	return tags
 }
 
 // CleanupServiceTags cleans up the service tags added by tagit.

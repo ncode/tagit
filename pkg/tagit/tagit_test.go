@@ -301,7 +301,8 @@ func (m *MockConsulClient) Agent() ConsulAgent {
 
 // MockAgent simulates the Agent part of the Consul client.
 type MockAgent struct {
-	ServicesFunc func() (map[string]*api.AgentService, error)
+	ServicesFunc        func() (map[string]*api.AgentService, error)
+	ServiceRegisterFunc func(reg *api.AgentServiceRegistration) error
 }
 
 func (m *MockAgent) Services() (map[string]*api.AgentService, error) {
@@ -309,7 +310,7 @@ func (m *MockAgent) Services() (map[string]*api.AgentService, error) {
 }
 
 func (m *MockAgent) ServiceRegister(reg *api.AgentServiceRegistration) error {
-	return nil
+	return m.ServiceRegisterFunc(reg)
 }
 
 func TestNew(t *testing.T) {
@@ -332,5 +333,166 @@ func TestNew(t *testing.T) {
 	}
 	if tagit.ServiceID != "test-service" {
 		t.Errorf("Expected ServiceID to be 'test-service', got '%s'", tagit.ServiceID)
+	}
+}
+
+func TestGetService(t *testing.T) {
+	tests := []struct {
+		name             string
+		serviceID        string
+		mockServicesData map[string]*api.AgentService
+		mockServicesErr  error
+		expectErr        bool
+		expectService    *api.AgentService
+	}{
+		{
+			name:      "Service Found",
+			serviceID: "test-service",
+			mockServicesData: map[string]*api.AgentService{
+				"test-service": {
+					ID:      "test-service",
+					Service: "test",
+					Tags:    []string{"tag1", "tag2"},
+				},
+			},
+			expectErr:     false,
+			expectService: &api.AgentService{ID: "test-service", Service: "test", Tags: []string{"tag1", "tag2"}},
+		},
+		{
+			name:             "Service Not Found",
+			serviceID:        "nonexistent-service",
+			mockServicesData: map[string]*api.AgentService{},
+			expectErr:        true,
+			expectService:    nil,
+		},
+		{
+			name:            "Consul Client Error",
+			serviceID:       "test-service",
+			mockServicesErr: fmt.Errorf("consul client error"),
+			expectErr:       true,
+			expectService:   nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockConsulClient := &MockConsulClient{
+				MockAgent: &MockAgent{
+					ServicesFunc: func() (map[string]*api.AgentService, error) {
+						return tt.mockServicesData, tt.mockServicesErr
+					},
+				},
+			}
+			tagit := New(mockConsulClient, nil, tt.serviceID, "", 0, "")
+
+			service, err := tagit.getService()
+
+			if tt.expectErr && err == nil {
+				t.Errorf("Expected an error but got none")
+			} else if !tt.expectErr && err != nil {
+				t.Errorf("Did not expect an error but got: %v", err)
+			}
+
+			if !reflect.DeepEqual(service, tt.expectService) {
+				t.Errorf("Expected service: %v, got: %v", tt.expectService, service)
+			}
+		})
+	}
+}
+
+func TestGenerateNewTags(t *testing.T) {
+	tests := []struct {
+		name       string
+		script     string
+		mockOutput string
+		mockError  error
+		want       []string
+		wantErr    bool
+	}{
+		{
+			name:       "Valid Script Output",
+			script:     "echo tag1 tag2",
+			mockOutput: "tag1 tag2",
+			want:       []string{"tag-tag1", "tag-tag2"},
+			wantErr:    false,
+		},
+		{
+			name:      "Script Execution Error",
+			script:    "someinvalidcommand",
+			mockError: fmt.Errorf("command failed"),
+			want:      nil,
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockExecutor := &MockCommandExecutor{
+				MockOutput: []byte(tt.mockOutput),
+				MockError:  tt.mockError,
+			}
+			tagit := TagIt{Script: tt.script, commandExecutor: mockExecutor, TagPrefix: "tag"}
+
+			got, err := tagit.generateNewTags()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("generateNewTags() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("generateNewTags() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateConsulService(t *testing.T) {
+	tests := []struct {
+		name            string
+		existingTags    []string
+		newTags         []string
+		mockRegisterErr error
+		expectUpdate    bool
+		expectErr       bool
+	}{
+		{
+			name:         "Update Needed",
+			existingTags: []string{"tag1", "tag2"},
+			newTags:      []string{"tag1", "tag3"},
+			expectUpdate: true,
+			expectErr:    false,
+		},
+		{
+			name:         "No Update Needed",
+			existingTags: []string{"tag1", "tag2"},
+			newTags:      []string{"tag1", "tag2"},
+			expectUpdate: false,
+			expectErr:    false,
+		},
+		{
+			name:            "Consul Register Error",
+			existingTags:    []string{"tag1", "tag2"},
+			newTags:         []string{"tag1", "tag3"},
+			mockRegisterErr: fmt.Errorf("consul error"),
+			expectUpdate:    true,
+			expectErr:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &api.AgentService{Tags: tt.existingTags}
+			mockConsulClient := &MockConsulClient{
+				MockAgent: &MockAgent{
+					ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
+						return tt.mockRegisterErr
+					},
+				},
+			}
+			tagit := TagIt{client: mockConsulClient}
+
+			err := tagit.updateConsulService(service, tt.newTags)
+			if (err != nil) != tt.expectErr {
+				t.Fatalf("updateConsulService() error = %v, wantErr %v", err, tt.expectErr)
+			}
+		})
 	}
 }
