@@ -53,5 +53,4 @@ sequenceDiagram
 
 ## Todo
 
-- [ ] Adds support for multiple services (currently only supports one service)
 - [ ] Adds a systemd unit file generator
