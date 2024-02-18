@@ -290,13 +290,26 @@ func TestRunScript(t *testing.T) {
 	}
 }
 
-// MockConsulClient is a mock implementation of the ConsulClient interface
-type MockConsulClient struct{}
+// MockConsulClient implements the ConsulClient interface for testing.
+type MockConsulClient struct {
+	MockAgent *MockAgent
+}
 
-// TODO: Implement the Agent method properly so that we can test the rest of the methods
-func (m *MockConsulClient) Agent() *api.Agent {
-	// Return a mock *api.Agent if needed
-	return &api.Agent{}
+func (m *MockConsulClient) Agent() ConsulAgent {
+	return m.MockAgent
+}
+
+// MockAgent simulates the Agent part of the Consul client.
+type MockAgent struct {
+	ServicesFunc func() (map[string]*api.AgentService, error)
+}
+
+func (m *MockAgent) Services() (map[string]*api.AgentService, error) {
+	return m.ServicesFunc()
+}
+
+func (m *MockAgent) ServiceRegister(reg *api.AgentServiceRegistration) error {
+	return nil
 }
 
 func TestNew(t *testing.T) {

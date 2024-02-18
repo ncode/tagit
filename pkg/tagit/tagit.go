@@ -25,7 +25,13 @@ type TagIt struct {
 
 // ConsulClient is an interface for the Consul client.
 type ConsulClient interface {
-	Agent() *api.Agent
+	Agent() ConsulAgent
+}
+
+// ConsulClientAgent is an interface for the Consul agent.
+type ConsulAgent interface {
+	Services() (map[string]*api.AgentService, error)
+	ServiceRegister(*api.AgentServiceRegistration) error
 }
 
 // CommandExecutor is an interface for running commands.
