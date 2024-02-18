@@ -70,7 +70,7 @@ example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 			os.Exit(1)
 		}
 
-		t := tagit.New(consulClient, &tagit.CmdExecutor{}, serviceID, script, validInterval, tagPrefix)
+		t := tagit.New(tagit.NewConsulAPIWrapper(consulClient), &tagit.CmdExecutor{}, serviceID, script, validInterval, tagPrefix)
 		t.Run()
 	},
 }

@@ -34,6 +34,21 @@ type ConsulAgent interface {
 	ServiceRegister(*api.AgentServiceRegistration) error
 }
 
+// ConsulAPIWrapper wraps the Consul API client to conform to the ConsulClient interface.
+type ConsulAPIWrapper struct {
+	client *api.Client
+}
+
+// NewConsulAPIWrapper creates a new instance of ConsulAPIWrapper.
+func NewConsulAPIWrapper(client *api.Client) *ConsulAPIWrapper {
+	return &ConsulAPIWrapper{client: client}
+}
+
+// Agent returns an object that conforms to the ConsulAgent interface.
+func (w *ConsulAPIWrapper) Agent() ConsulAgent {
+	return w.client.Agent()
+}
+
 // CommandExecutor is an interface for running commands.
 type CommandExecutor interface {
 	Execute(command string) ([]byte, error)
