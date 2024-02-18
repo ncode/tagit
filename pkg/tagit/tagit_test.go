@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/consul/api"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDiffTags(t *testing.T) {
@@ -495,4 +496,26 @@ func TestUpdateConsulService(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewConsulAPIWrapper(t *testing.T) {
+	// Mock Consul API client
+	consulClient, err := api.NewClient(api.DefaultConfig())
+	if err != nil {
+		t.Fatalf("Failed to create Consul client: %v", err)
+	}
+
+	// Test NewConsulAPIWrapper
+	wrapper := NewConsulAPIWrapper(consulClient)
+
+	// Assert that wrapper is not nil
+	assert.NotNil(t, wrapper, "NewConsulAPIWrapper returned nil")
+
+	// Assert that wrapper implements ConsulClient interface
+	_, isConsulClient := interface{}(wrapper).(ConsulClient)
+	assert.True(t, isConsulClient, "NewConsulAPIWrapper does not implement ConsulClient interface")
+
+	// Optionally, assert that wrapper's Agent method returns a ConsulAgent
+	_, isConsulAgent := wrapper.Agent().(ConsulAgent)
+	assert.True(t, isConsulAgent, "Wrapper's Agent method does not return a ConsulAgent")
 }
