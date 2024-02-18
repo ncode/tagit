@@ -16,6 +16,7 @@ limitations under the License.
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -39,6 +40,7 @@ example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 		script := cmd.PersistentFlags().Lookup("script").Value.String()
 		tagPrefix := cmd.PersistentFlags().Lookup("tag-prefix").Value.String()
 		interval := cmd.PersistentFlags().Lookup("interval").Value.String()
+		ctx := context.Background()
 
 		if serviceID == "" {
 			fmt.Println("service-id is required")
@@ -71,7 +73,7 @@ example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 		}
 
 		t := tagit.New(tagit.NewConsulAPIWrapper(consulClient), &tagit.CmdExecutor{}, serviceID, script, validInterval, tagPrefix)
-		t.Run()
+		t.Run(ctx)
 	},
 }
 

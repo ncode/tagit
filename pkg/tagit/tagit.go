@@ -1,6 +1,7 @@
 package tagit
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -77,16 +78,22 @@ func New(consulClient ConsulClient, commandExecutor CommandExecutor, serviceID s
 }
 
 // Run will run the tagit flow and tag consul services based on the script output
-func (t *TagIt) Run() {
+func (t *TagIt) Run(ctx context.Context) {
+	ticker := time.NewTicker(t.Interval)
 	for {
-		err := t.updateServiceTags()
-		if err != nil {
-			log.WithFields(log.Fields{
-				"service": t.ServiceID,
-				"error":   err,
-			}).Error("error updating service tags")
+		select {
+		case <-ctx.Done():
+			ticker.Stop()
+			return
+		case <-ticker.C:
+			err := t.updateServiceTags()
+			if err != nil {
+				log.WithFields(log.Fields{
+					"service": t.ServiceID,
+					"error":   err,
+				}).Error("error updating service tags")
+			}
 		}
-		time.Sleep(t.Interval)
 	}
 }
 

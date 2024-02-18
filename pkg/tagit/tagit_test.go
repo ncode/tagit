@@ -562,3 +562,64 @@ func TestCmdExecutor_Execute(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateServiceTags(t *testing.T) {
+	tests := []struct {
+		name             string
+		mockScriptOutput string
+		mockScriptError  error
+		existingTags     []string
+		newTags          []string
+		mockRegisterErr  error
+		expectError      bool
+	}{
+		{
+			name:             "Successful Update",
+			mockScriptOutput: "new-tag1 new-tag2",
+			existingTags:     []string{"old-tag"},
+			newTags:          []string{"tag-new-tag1", "tag-new-tag2"},
+			expectError:      false,
+		},
+		{
+			name:            "Script Error",
+			mockScriptError: fmt.Errorf("script error"),
+			expectError:     true,
+		},
+		{
+			name:             "Consul Register Error",
+			mockScriptOutput: "new-tag1 new-tag2",
+			mockRegisterErr:  fmt.Errorf("consul error"),
+			expectError:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockExecutor := &MockCommandExecutor{
+				MockOutput: []byte(tt.mockScriptOutput),
+				MockError:  tt.mockScriptError,
+			}
+			mockConsulClient := &MockConsulClient{
+				MockAgent: &MockAgent{
+					ServicesFunc: func() (map[string]*api.AgentService, error) {
+						return map[string]*api.AgentService{
+							"test-service": {
+								ID:   "test-service",
+								Tags: tt.existingTags,
+							},
+						}, nil
+					},
+					ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
+						return tt.mockRegisterErr
+					},
+				},
+			}
+			tagit := New(mockConsulClient, mockExecutor, "test-service", "echo test", 30*time.Second, "tag")
+
+			err := tagit.updateServiceTags()
+			if (err != nil) != tt.expectError {
+				t.Errorf("updateServiceTags() error = %v, wantErr %v", err, tt.expectError)
+			}
+		})
+	}
+}
