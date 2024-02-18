@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -518,4 +519,46 @@ func TestNewConsulAPIWrapper(t *testing.T) {
 	// Optionally, assert that wrapper's Agent method returns a ConsulAgent
 	_, isConsulAgent := wrapper.Agent().(ConsulAgent)
 	assert.True(t, isConsulAgent, "Wrapper's Agent method does not return a ConsulAgent")
+}
+
+func TestCmdExecutor_Execute(t *testing.T) {
+	tests := []struct {
+		name        string
+		command     string
+		wantOutput  string
+		expectError bool
+	}{
+		{
+			name:        "Echo Command",
+			command:     "echo test",
+			wantOutput:  "test\n",
+			expectError: false,
+		},
+		{
+			name:        "Invalid Command",
+			command:     "invalidcommand",
+			expectError: true,
+		},
+	}
+
+	executor := &CmdExecutor{}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output, err := executor.Execute(tt.command)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected an error for command: %s, but got none", tt.command)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Did not expect an error for command: %s, but got: %v", tt.command, err)
+				}
+				if strings.TrimSpace(string(output)) != strings.TrimSpace(tt.wantOutput) {
+					t.Errorf("Unexpected output for command: %s. Expected: %s, got: %s", tt.command, tt.wantOutput, string(output))
+				}
+			}
+		})
+	}
 }
