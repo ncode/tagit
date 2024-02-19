@@ -738,6 +738,9 @@ func TestRun(t *testing.T) {
 		MockAgent: &MockAgent{
 			ServicesFunc: func() (map[string]*api.AgentService, error) {
 				updateServiceTagsCalled.Add(1)
+				if updateServiceTagsCalled.Load() == 2 {
+					return nil, fmt.Errorf("enter error")
+				}
 				return map[string]*api.AgentService{
 					"test-service": {
 						ID:   "test-service",
@@ -758,7 +761,7 @@ func TestRun(t *testing.T) {
 	go tagit.Run(ctx)
 
 	// Allow some time to pass and then cancel the context
-	time.Sleep(250 * time.Millisecond) // Adjust this duration as needed
+	time.Sleep(350 * time.Millisecond) // Adjust this duration as needed
 	cancel()
 
 	// Allow some time for the goroutine to react to the context cancellation
