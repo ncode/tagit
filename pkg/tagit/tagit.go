@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -103,13 +104,7 @@ func (t *TagIt) CleanupTags() error {
 	if err != nil {
 		return fmt.Errorf("error getting service: %w", err)
 	}
-	registration := t.copyServiceToRegistration(service)
-	updatedTags, tagged := t.excludeTagged(registration.Tags)
-	if tagged {
-		registration.Tags = updatedTags
-		return t.client.Agent().ServiceRegister(registration)
-	}
-	return nil
+	return t.updateConsulService(service, []string{})
 }
 
 // runScript runs a command and returns the output.
@@ -206,8 +201,10 @@ func (t *TagIt) needsTag(current []string, update []string) (updatedTags []strin
 	if len(diff) == 0 {
 		return nil, false
 	}
-
-	updatedTags, _ = t.excludeTagged(diff)
+	currentFiltered, _ := t.excludeTagged(current)
+	updatedTags = append(currentFiltered, update...)
+	slices.Sort(updatedTags)
+	updatedTags = slices.Compact(updatedTags)
 	return updatedTags, true
 }
 

@@ -145,7 +145,7 @@ func TestNeedsTag(t *testing.T) {
 			name:           "Update Needed",
 			current:        []string{"tag-tag1", "tag-tag2"},
 			update:         []string{"tag-tag1", "tag-tag2", "tag3"},
-			expectedTags:   []string{"tag3"},
+			expectedTags:   []string{"tag-tag1", "tag-tag2", "tag3"},
 			expectedShould: true,
 		},
 		{
@@ -166,7 +166,7 @@ func TestNeedsTag(t *testing.T) {
 			name:           "Mixed Changes",
 			current:        []string{"tag-tag1", "tag2", "tag4"},
 			update:         []string{"tag2", "tag3", "tag5"},
-			expectedTags:   []string{"tag4", "tag3", "tag5"},
+			expectedTags:   []string{"tag2", "tag3", "tag4", "tag5"},
 			expectedShould: true,
 		},
 	}
@@ -660,7 +660,7 @@ func TestCleanupTags(t *testing.T) {
 			},
 			tagPrefix:   "tag",
 			expectError: false,
-			expectTags:  []string{"prefix1", "prefix2", "other-tag"},
+			expectTags:  []string{"other-tag", "prefix1", "prefix2"},
 		},
 		{
 			name:      "Service Not Found",
