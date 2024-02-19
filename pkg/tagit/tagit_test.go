@@ -623,3 +623,101 @@ func TestUpdateServiceTags(t *testing.T) {
 		})
 	}
 }
+
+func TestCleanupTags(t *testing.T) {
+	tests := []struct {
+		name            string
+		serviceID       string
+		mockServices    map[string]*api.AgentService
+		tagPrefix       string
+		mockRegisterErr error
+		expectError     bool
+		expectTags      []string
+	}{
+		{
+			name:      "Successful Tag Cleanup",
+			serviceID: "test-service",
+			mockServices: map[string]*api.AgentService{
+				"test-service": {
+					ID:   "test-service",
+					Tags: []string{"tag-prefix1", "tag-prefix2", "other-tag"},
+				},
+			},
+			tagPrefix:   "tag",
+			expectError: false,
+			expectTags:  []string{"other-tag"},
+		},
+		{
+			name:      "No Tag Cleanup needed",
+			serviceID: "test-service",
+			mockServices: map[string]*api.AgentService{
+				"test-service": {
+					ID:   "test-service",
+					Tags: []string{"prefix1", "prefix2", "other-tag"},
+				},
+			},
+			tagPrefix:   "tag",
+			expectError: false,
+			expectTags:  []string{"prefix1", "prefix2", "other-tag"},
+		},
+		{
+			name:      "Service Not Found",
+			serviceID: "non-existent-service",
+			mockServices: map[string]*api.AgentService{
+				"other-service": {
+					ID:   "other-service",
+					Tags: []string{"some-tag", "another-tag"},
+				},
+			},
+			tagPrefix:   "tag-prefix",
+			expectError: true,
+		},
+		{
+			name:      "Consul Register Error",
+			serviceID: "test-service",
+			mockServices: map[string]*api.AgentService{
+				"test-service": {
+					ID:   "test-service",
+					Tags: []string{"tag-prefix1", "other-tag"},
+				},
+			},
+			tagPrefix:       "tag",
+			mockRegisterErr: fmt.Errorf("consul register error"),
+			expectError:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockConsulClient := &MockConsulClient{
+				MockAgent: &MockAgent{
+					ServicesFunc: func() (map[string]*api.AgentService, error) {
+						return tt.mockServices, nil
+					},
+					ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
+						// Ensure the service exists in the mock data
+						if service, exists := tt.mockServices[reg.ID]; exists && tt.mockRegisterErr == nil {
+							// Update the tags of the service
+							service.Tags = reg.Tags
+							tt.mockServices[reg.ID] = service // Update the map with the modified service
+						}
+						return tt.mockRegisterErr
+					},
+				},
+			}
+			tagit := New(mockConsulClient, nil, tt.serviceID, "", 0, tt.tagPrefix)
+
+			err := tagit.CleanupTags()
+			if (err != nil) != tt.expectError {
+				t.Errorf("CleanupTags() error = %v, wantErr %v", err, tt.expectError)
+			}
+
+			if !tt.expectError {
+				updatedService := tt.mockServices[tt.serviceID]
+				if updatedService != nil && !reflect.DeepEqual(updatedService.Tags, tt.expectTags) {
+					t.Errorf("Expected tags after cleanup: %v, got: %v", tt.expectTags, updatedService.Tags)
+				}
+			}
+		})
+	}
+}

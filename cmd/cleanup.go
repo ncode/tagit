@@ -24,13 +24,7 @@ import (
 // cleanupCmd represents the cleanup command
 var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "cleanup removes all services with the tag prefix from a given consul service",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("cleanup called")
 	},

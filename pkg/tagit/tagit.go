@@ -97,6 +97,21 @@ func (t *TagIt) Run(ctx context.Context) {
 	}
 }
 
+// CleanupTags removes all tags with the given prefix from the service.
+func (t *TagIt) CleanupTags() error {
+	service, err := t.getService()
+	if err != nil {
+		return fmt.Errorf("error getting service: %w", err)
+	}
+	registration := t.copyServiceToRegistration(service)
+	updatedTags, tagged := t.excludeTagged(registration.Tags)
+	if tagged {
+		registration.Tags = updatedTags
+		return t.client.Agent().ServiceRegister(registration)
+	}
+	return nil
+}
+
 // runScript runs a command and returns the output.
 func (t *TagIt) runScript() ([]byte, error) {
 	log.WithFields(log.Fields{
