@@ -1,10 +1,12 @@
 package tagit
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -621,5 +623,152 @@ func TestUpdateServiceTags(t *testing.T) {
 				t.Errorf("updateServiceTags() error = %v, wantErr %v", err, tt.expectError)
 			}
 		})
+	}
+}
+
+func TestCleanupTags(t *testing.T) {
+	tests := []struct {
+		name            string
+		serviceID       string
+		mockServices    map[string]*api.AgentService
+		tagPrefix       string
+		mockRegisterErr error
+		expectError     bool
+		expectTags      []string
+	}{
+		{
+			name:      "Successful Tag Cleanup",
+			serviceID: "test-service",
+			mockServices: map[string]*api.AgentService{
+				"test-service": {
+					ID:   "test-service",
+					Tags: []string{"tag-prefix1", "tag-prefix2", "other-tag"},
+				},
+			},
+			tagPrefix:   "tag",
+			expectError: false,
+			expectTags:  []string{"other-tag"},
+		},
+		{
+			name:      "No Tag Cleanup needed",
+			serviceID: "test-service",
+			mockServices: map[string]*api.AgentService{
+				"test-service": {
+					ID:   "test-service",
+					Tags: []string{"prefix1", "prefix2", "other-tag"},
+				},
+			},
+			tagPrefix:   "tag",
+			expectError: false,
+			expectTags:  []string{"prefix1", "prefix2", "other-tag"},
+		},
+		{
+			name:      "Service Not Found",
+			serviceID: "non-existent-service",
+			mockServices: map[string]*api.AgentService{
+				"other-service": {
+					ID:   "other-service",
+					Tags: []string{"some-tag", "another-tag"},
+				},
+			},
+			tagPrefix:   "tag-prefix",
+			expectError: true,
+		},
+		{
+			name:      "Consul Register Error",
+			serviceID: "test-service",
+			mockServices: map[string]*api.AgentService{
+				"test-service": {
+					ID:   "test-service",
+					Tags: []string{"tag-prefix1", "other-tag"},
+				},
+			},
+			tagPrefix:       "tag",
+			mockRegisterErr: fmt.Errorf("consul register error"),
+			expectError:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockConsulClient := &MockConsulClient{
+				MockAgent: &MockAgent{
+					ServicesFunc: func() (map[string]*api.AgentService, error) {
+						return tt.mockServices, nil
+					},
+					ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
+						// Ensure the service exists in the mock data
+						if service, exists := tt.mockServices[reg.ID]; exists && tt.mockRegisterErr == nil {
+							// Update the tags of the service
+							service.Tags = reg.Tags
+							tt.mockServices[reg.ID] = service // Update the map with the modified service
+						}
+						return tt.mockRegisterErr
+					},
+				},
+			}
+			tagit := New(mockConsulClient, nil, tt.serviceID, "", 0, tt.tagPrefix)
+
+			err := tagit.CleanupTags()
+			if (err != nil) != tt.expectError {
+				t.Errorf("CleanupTags() error = %v, wantErr %v", err, tt.expectError)
+			}
+
+			if !tt.expectError {
+				updatedService := tt.mockServices[tt.serviceID]
+				if updatedService != nil && !reflect.DeepEqual(updatedService.Tags, tt.expectTags) {
+					t.Errorf("Expected tags after cleanup: %v, got: %v", tt.expectTags, updatedService.Tags)
+				}
+			}
+		})
+	}
+}
+
+func TestRun(t *testing.T) {
+	// Setup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	updateServiceTagsCalled := atomic.Int32{}
+	mockExecutor := &MockCommandExecutor{
+		MockOutput: []byte("new-tag1 new-tag2"),
+		MockError:  nil,
+	}
+	mockConsulClient := &MockConsulClient{
+		MockAgent: &MockAgent{
+			ServicesFunc: func() (map[string]*api.AgentService, error) {
+				updateServiceTagsCalled.Add(1)
+				if updateServiceTagsCalled.Load() == 2 {
+					return nil, fmt.Errorf("enter error")
+				}
+				return map[string]*api.AgentService{
+					"test-service": {
+						ID:   "test-service",
+						Tags: []string{"old-tag"},
+					},
+				}, nil
+			},
+			ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
+
+				return nil
+			},
+		},
+	}
+
+	tagit := New(mockConsulClient, mockExecutor, "test-service", "echo test", 100*time.Millisecond, "tag")
+
+	// Start Run in a goroutine
+	go tagit.Run(ctx)
+
+	// Allow some time to pass and then cancel the context
+	time.Sleep(350 * time.Millisecond) // Adjust this duration as needed
+	cancel()
+
+	// Allow some time for the goroutine to react to the context cancellation
+	time.Sleep(50 * time.Millisecond)
+
+	// Check if updateServiceTags was called as expected
+	if updateServiceTagsCalled.Load() < 2 || updateServiceTagsCalled.Load() > 3 {
+		t.Errorf("Expected updateServiceTags to be called 2 or 3 times, got %d", updateServiceTagsCalled)
 	}
 }
