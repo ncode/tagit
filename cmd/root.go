@@ -41,7 +41,15 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-	runCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.tagit.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.tagit.yaml)")
+	rootCmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
+	rootCmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
+	rootCmd.MarkPersistentFlagRequired("service-id")
+	rootCmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
+	rootCmd.MarkPersistentFlagRequired("script")
+	rootCmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
+	rootCmd.PersistentFlags().StringP("interval", "i", "60s", "interval to run the script")
+	rootCmd.PersistentFlags().StringP("token", "t", "", "consul token")
 }
 
 // initConfig reads in config file and ENV variables if set.

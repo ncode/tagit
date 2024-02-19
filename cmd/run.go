@@ -36,22 +36,8 @@ var runCmd = &cobra.Command{
 example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		serviceID := cmd.PersistentFlags().Lookup("service-id").Value.String()
-		script := cmd.PersistentFlags().Lookup("script").Value.String()
-		tagPrefix := cmd.PersistentFlags().Lookup("tag-prefix").Value.String()
-		interval := cmd.PersistentFlags().Lookup("interval").Value.String()
+		interval := cmd.InheritedFlags().Lookup("interval").Value.String()
 		ctx := context.Background()
-
-		if serviceID == "" {
-			fmt.Println("service-id is required")
-			os.Exit(1)
-		}
-
-		if script == "" {
-			fmt.Println("script is required")
-			os.Exit(1)
-		}
-
 		if interval == "" || interval == "0" {
 			fmt.Println("interval is required")
 			os.Exit(1)
@@ -64,26 +50,26 @@ example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 		}
 
 		config := api.DefaultConfig()
-		config.Address = cmd.PersistentFlags().Lookup("consul-addr").Value.String()
-		config.Token = cmd.PersistentFlags().Lookup("token").Value.String()
+		config.Address = cmd.InheritedFlags().Lookup("consul-addr").Value.String()
+		config.Token = cmd.InheritedFlags().Lookup("token").Value.String()
 		consulClient, err := api.NewClient(config)
 		if err != nil {
 			fmt.Printf("error creating consul client: %s", err.Error())
 			os.Exit(1)
 		}
 
-		t := tagit.New(tagit.NewConsulAPIWrapper(consulClient), &tagit.CmdExecutor{}, serviceID, script, validInterval, tagPrefix)
+		t := tagit.New(
+			tagit.NewConsulAPIWrapper(consulClient),
+			&tagit.CmdExecutor{},
+			cmd.InheritedFlags().Lookup("service-id").Value.String(),
+			cmd.InheritedFlags().Lookup("script").Value.String(),
+			validInterval,
+			cmd.InheritedFlags().Lookup("tag-prefix").Value.String(),
+		)
 		t.Run(ctx)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-
-	runCmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
-	runCmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
-	runCmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
-	runCmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
-	runCmd.PersistentFlags().StringP("interval", "i", "60s", "interval to run the script")
-	runCmd.PersistentFlags().StringP("token", "t", "", "consul token")
 }
