@@ -1,6 +1,7 @@
 package tagit
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"slices"
@@ -719,5 +720,51 @@ func TestCleanupTags(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRun(t *testing.T) {
+	// Setup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	updateServiceTagsCalled := 0
+	mockExecutor := &MockCommandExecutor{
+		MockOutput: []byte("new-tag1 new-tag2"),
+		MockError:  nil,
+	}
+	mockConsulClient := &MockConsulClient{
+		MockAgent: &MockAgent{
+			ServicesFunc: func() (map[string]*api.AgentService, error) {
+				updateServiceTagsCalled++
+				return map[string]*api.AgentService{
+					"test-service": {
+						ID:   "test-service",
+						Tags: []string{"old-tag"},
+					},
+				}, nil
+			},
+			ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
+
+				return nil
+			},
+		},
+	}
+
+	tagit := New(mockConsulClient, mockExecutor, "test-service", "echo test", 100*time.Millisecond, "tag")
+
+	// Start Run in a goroutine
+	go tagit.Run(ctx)
+
+	// Allow some time to pass and then cancel the context
+	time.Sleep(250 * time.Millisecond) // Adjust this duration as needed
+	cancel()
+
+	// Allow some time for the goroutine to react to the context cancellation
+	time.Sleep(50 * time.Millisecond)
+
+	// Check if updateServiceTags was called as expected
+	if updateServiceTagsCalled < 2 || updateServiceTagsCalled > 3 {
+		t.Errorf("Expected updateServiceTags to be called 2 or 3 times, got %d", updateServiceTagsCalled)
 	}
 }
