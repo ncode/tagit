@@ -17,8 +17,10 @@ package cmd
 
 import (
 	"fmt"
-
+	"github.com/hashicorp/consul/api"
+	"github.com/ncode/tagit/pkg/tagit"
 	"github.com/spf13/cobra"
+	"os"
 )
 
 // cleanupCmd represents the cleanup command
@@ -26,7 +28,28 @@ var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
 	Short: "cleanup removes all services with the tag prefix from a given consul service",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("cleanup called")
+		config := api.DefaultConfig()
+		config.Address = cmd.InheritedFlags().Lookup("consul-addr").Value.String()
+		config.Token = cmd.InheritedFlags().Lookup("token").Value.String()
+		consulClient, err := api.NewClient(config)
+		if err != nil {
+			fmt.Printf("error creating consul client: %s", err.Error())
+			os.Exit(1)
+		}
+
+		t := tagit.New(
+			tagit.NewConsulAPIWrapper(consulClient),
+			&tagit.CmdExecutor{},
+			cmd.InheritedFlags().Lookup("service-id").Value.String(),
+			cmd.InheritedFlags().Lookup("script").Value.String(),
+			0,
+			cmd.InheritedFlags().Lookup("tag-prefix").Value.String(),
+		)
+		err = t.CleanupTags()
+		if err != nil {
+			fmt.Printf("error cleaning up tags: %s", err.Error())
+			os.Exit(1)
+		}
 	},
 }
 
