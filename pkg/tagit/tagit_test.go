@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -728,7 +729,7 @@ func TestRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	updateServiceTagsCalled := 0
+	updateServiceTagsCalled := atomic.Int32{}
 	mockExecutor := &MockCommandExecutor{
 		MockOutput: []byte("new-tag1 new-tag2"),
 		MockError:  nil,
@@ -736,7 +737,7 @@ func TestRun(t *testing.T) {
 	mockConsulClient := &MockConsulClient{
 		MockAgent: &MockAgent{
 			ServicesFunc: func() (map[string]*api.AgentService, error) {
-				updateServiceTagsCalled++
+				updateServiceTagsCalled.Add(1)
 				return map[string]*api.AgentService{
 					"test-service": {
 						ID:   "test-service",
@@ -764,7 +765,7 @@ func TestRun(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Check if updateServiceTags was called as expected
-	if updateServiceTagsCalled < 2 || updateServiceTagsCalled > 3 {
+	if updateServiceTagsCalled.Load() < 2 || updateServiceTagsCalled.Load() > 3 {
 		t.Errorf("Expected updateServiceTags to be called 2 or 3 times, got %d", updateServiceTagsCalled)
 	}
 }
