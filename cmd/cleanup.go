@@ -16,11 +16,12 @@ limitations under the License.
 package cmd
 
 import (
-	"fmt"
+	"log/slog"
+	"os"
+
 	"github.com/hashicorp/consul/api"
 	"github.com/ncode/tagit/pkg/tagit"
 	"github.com/spf13/cobra"
-	"os"
 )
 
 // cleanupCmd represents the cleanup command
@@ -28,28 +29,42 @@ var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
 	Short: "cleanup removes all services with the tag prefix from a given consul service",
 	Run: func(cmd *cobra.Command, args []string) {
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		}))
+
 		config := api.DefaultConfig()
 		config.Address = cmd.InheritedFlags().Lookup("consul-addr").Value.String()
 		config.Token = cmd.InheritedFlags().Lookup("token").Value.String()
+
 		consulClient, err := api.NewClient(config)
 		if err != nil {
-			fmt.Printf("error creating consul client: %s", err.Error())
+			logger.Error("Failed to create Consul client", "error", err)
 			os.Exit(1)
 		}
+
+		serviceID := cmd.InheritedFlags().Lookup("service-id").Value.String()
+		tagPrefix := cmd.InheritedFlags().Lookup("tag-prefix").Value.String()
 
 		t := tagit.New(
 			tagit.NewConsulAPIWrapper(consulClient),
 			&tagit.CmdExecutor{},
-			cmd.InheritedFlags().Lookup("service-id").Value.String(),
-			cmd.InheritedFlags().Lookup("script").Value.String(),
-			0,
-			cmd.InheritedFlags().Lookup("tag-prefix").Value.String(),
+			serviceID,
+			"", // script is not needed for cleanup
+			0,  // interval is not needed for cleanup
+			tagPrefix,
+			logger,
 		)
+
+		logger.Info("Starting tag cleanup", "serviceID", serviceID, "tagPrefix", tagPrefix)
+
 		err = t.CleanupTags()
 		if err != nil {
-			fmt.Printf("error cleaning up tags: %s", err.Error())
+			logger.Error("Failed to clean up tags", "error", err)
 			os.Exit(1)
 		}
+
+		logger.Info("Tag cleanup completed successfully")
 	},
 }
 
