@@ -58,9 +58,15 @@ type CommandExecutor interface {
 type CmdExecutor struct{}
 
 func (e *CmdExecutor) Execute(command string) ([]byte, error) {
+	if command == "" {
+		return nil, fmt.Errorf("failed to execute: empty command")
+	}
 	args, err := shlex.Split(command)
 	if err != nil {
 		return nil, fmt.Errorf("failed to split command: %w", err)
+	}
+	if len(args) == 0 {
+		return nil, fmt.Errorf("failed to execute: no command after splitting")
 	}
 	return exec.Command(args[0], args[1:]...).Output()
 }

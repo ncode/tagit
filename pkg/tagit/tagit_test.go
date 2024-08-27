@@ -616,17 +616,31 @@ func TestCmdExecutor_Execute(t *testing.T) {
 		name        string
 		command     string
 		wantOutput  string
+		wantErr     string
 		expectError bool
 	}{
 		{
-			name:        "Echo Command",
+			name:        "Valid command",
 			command:     "echo test",
 			wantOutput:  "test\n",
 			expectError: false,
 		},
 		{
-			name:        "Invalid Command",
+			name:        "Empty command",
+			command:     "",
+			wantErr:     "failed to execute: empty command",
+			expectError: true,
+		},
+		{
+			name:        "Command with unclosed quote",
+			command:     "echo \"unclosed quote",
+			wantErr:     "failed to split command:",
+			expectError: true,
+		},
+		{
+			name:        "Invalid command",
 			command:     "invalidcommand",
+			wantErr:     "exec: \"invalidcommand\": executable file not found in $PATH",
 			expectError: true,
 		},
 	}
@@ -639,6 +653,7 @@ func TestCmdExecutor_Execute(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.wantOutput, string(output))
