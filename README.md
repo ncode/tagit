@@ -8,35 +8,31 @@ TagIt is a tool that updates Consul service registration tags with outputs of a 
 
 ## Table of Contents
 
-- [Why TagIt?](#why)
+- [Why TagIt?](#why-tagit)
 - [Installation](#installation)
 - [Usage](#usage)
+  - [Run Command](#run-command)
+  - [Cleanup Command](#cleanup-command)
+  - [Systemd Command](#systemd-command)
 - [How It Works](#how-it-works)
 - [Examples](#examples)
 - [Contributing](#contributing)
 - [License](#license)
 
-## Why?
+## Why TagIt?
 
 TagIt addresses a feature that's currently missing from Consul. You can read more about the need for this functionality in [this Consul issue](https://github.com/hashicorp/consul/issues/1048).
 
 Here are some scenarios where TagIt can be useful:
 
-1. **Database Leader Tagging**: Your databases are under `mydb.service.consul`, and you want to ensure all writes go to the leader.
-   - Run a script that checks for the leader and updates the tag accordingly.
-
-2. **Non-Consul-Aware Service Discovery**: You have a service that isn't Consul-aware, but you want to use Consul for service discovery.
-   - Run a script that checks the service status and updates the tags.
-
-3. **Web Server VHost Tagging**: You have a load balancer or web server, and you want tags for all vhosts served by this server.
-   - Run a script that checks the vhosts and updates the tags.
-
-4. **Generic Service Tagging**: For any services that aren't Consul-aware, but you want to use Consul for service discovery.
-   - Run a script that checks the service and updates the tags.
+1. **Database Leader Tagging**: Ensure all writes go to the leader by tagging it appropriately.
+2. **Non-Consul-Aware Service Discovery**: Use Consul for service discovery with services that aren't Consul-aware.
+3. **Web Server VHost Tagging**: Tag all vhosts served by a web server or load balancer.
+4. **Generic Service Tagging**: Tag any services for Consul-based service discovery.
 
 ## Installation
 
-To install TagIt, you can use the following commands:
+To install TagIt, use the following commands:
 
 ```bash
 $ git clone https://github.com/ncode/tagit
@@ -46,7 +42,7 @@ $ go build
 
 ## Usage
 
-TagIt provides two main commands: `run` and `cleanup`.
+TagIt provides three main commands: `run`, `cleanup`, and `systemd`.
 
 ### Run Command
 
@@ -64,9 +60,19 @@ The `cleanup` command removes all tags with the specified prefix from the servic
 $ ./tagit cleanup --consul-addr=127.0.0.1:8500 --service-id=my-service1 --tag-prefix=tagit
 ```
 
+### Systemd Command
+
+The `systemd` command generates a systemd service file for TagIt:
+
+```bash
+./tagit systemd --service-id=my-service1 --script=./examples/tagit/example.sh --tag-prefix=tagit --interval=5s --user=tagit --group=tagit
+```
+
+This command will output a systemd service file that you can use to run TagIt as a system service.
+
 ## How It Works
 
-Here's a sequence diagram illustrating how TagIt interacts with Consul:
+TagIt interacts with Consul as follows:
 
 >>>>>>> 6a3e346 (update readme)
 ```mermaid
@@ -74,9 +80,10 @@ sequenceDiagram
     participant tagit
     participant consul
     loop execute script on interval
-        tagit->>consul: Do you have a service with id my-service1?
-        consul->>tagit: Yes, here it is and that's the current registration
-        tagit->>consul: Update current registration adding or removing prefixed tags with the output of the script
+        tagit->>consul: Query service with ID
+        consul->>tagit: Return current service registration
+        tagit->>tagit: Execute script and process output
+        tagit->>consul: Update service registration with new tags
     end
 ```
 
@@ -99,7 +106,12 @@ Here's an example of how to test TagIt:
    ./tagit run --consul-addr=127.0.0.1:8500 --service-id=my-service1 --script=./examples/tagit/example.sh --interval=5s --tag-prefix=tagit
    ```
 
-4. Clean up the tags:
+4. Generate a systemd service file:
+   ```bash
+   ./tagit systemd --service-id=my-service1 --script=./examples/tagit/example.sh --tag-prefix=tagit --interval=5s --user=tagit --group=tagit > /etc/systemd/system/tagit-my-service1.service
+   ```
+
+5. Clean up the tags:
    ```bash
    ./tagit cleanup --consul-addr=127.0.0.1:8500 --service-id=my-service1 --tag-prefix=tagit
    ```
