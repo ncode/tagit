@@ -1,34 +1,74 @@
-# TagIt 
+# TagIt
+
 [![Go Report Card](https://goreportcard.com/badge/github.com/ncode/tagit)](https://goreportcard.com/report/github.com/ncode/tagit)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![codecov](https://codecov.io/gh/ncode/tagit/graph/badge.svg?token=ISXEH274YD)](https://codecov.io/gh/ncode/tagit)
 
+TagIt is a tool that updates Consul service registration tags with outputs of a script. It copies the current service registration and appends the output of the script line by line as tags, while keeping the original tags.
 
-Update consul registration tags with outputs of a script.
-It copies the current service registration and appends the output of the script line by line as tags, while keeping the original tags.
+## Table of Contents
+
+- [Why TagIt?](#why)
+- [Installation](#installation)
+- [Usage](#usage)
+- [How It Works](#how-it-works)
+- [Examples](#examples)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Why?
 
-Basically because it's a very useful feature that is missing from consul. Read more about it [here](https://github.com/hashicorp/consul/issues/1048).
-A few scenarios where this can be useful:
+TagIt addresses a feature that's currently missing from Consul. You can read more about the need for this functionality in [this Consul issue](https://github.com/hashicorp/consul/issues/1048).
 
-1. Your databases are under mydb.service.consul, and you would like to ensure that all the writes go to the leader
-   1. You run a script that checks the leader and updates the tag
-2. You have a service that is not consul aware, but you would like to use consul for service discovery
-   1. You run a script that checks the service and updates the tags
-3. You have a load or a webserver, and you would like to have tags for all vhosts that are served by this server
-   1. You run a script that checks the vhosts and updates the tags
-4. Pretty much any services that are not consul aware, but you would like to use consul for service discovery
-   1. You run a script that checks the service and updates the tags
+Here are some scenarios where TagIt can be useful:
 
-## How to test it?
+1. **Database Leader Tagging**: Your databases are under `mydb.service.consul`, and you want to ensure all writes go to the leader.
+   - Run a script that checks for the leader and updates the tag accordingly.
+
+2. **Non-Consul-Aware Service Discovery**: You have a service that isn't Consul-aware, but you want to use Consul for service discovery.
+   - Run a script that checks the service status and updates the tags.
+
+3. **Web Server VHost Tagging**: You have a load balancer or web server, and you want tags for all vhosts served by this server.
+   - Run a script that checks the vhosts and updates the tags.
+
+4. **Generic Service Tagging**: For any services that aren't Consul-aware, but you want to use Consul for service discovery.
+   - Run a script that checks the service and updates the tags.
+
+## Installation
+
+To install TagIt, you can use the following commands:
 
 ```bash
-$ git clone github.com/ncode/tagit
-$ cd configs/development
-$ make
+$ git clone https://github.com/ncode/tagit
+$ cd tagit
+$ go build
 ```
 
+## Usage
+
+TagIt provides two main commands: `run` and `cleanup`.
+
+### Run Command
+
+The `run` command starts TagIt and continuously updates the tags based on the script output:
+
+```bash
+$ ./tagit run --consul-addr=127.0.0.1:8500 --service-id=my-service1 --script=./examples/tagit/example.sh --interval=5s --tag-prefix=tagit
+```
+
+### Cleanup Command
+
+The `cleanup` command removes all tags with the specified prefix from the service:
+
+```bash
+$ ./tagit cleanup --consul-addr=127.0.0.1:8500 --service-id=my-service1 --tag-prefix=tagit
+```
+
+## How It Works
+
+Here's a sequence diagram illustrating how TagIt interacts with Consul:
+
+>>>>>>> 6a3e346 (update readme)
 ```mermaid
 sequenceDiagram
     participant tagit
@@ -36,10 +76,38 @@ sequenceDiagram
     loop execute script on interval
         tagit->>consul: Do you have a service with id my-service1?
         consul->>tagit: Yes, here it is and that's the current registration
-        tagit->>consul: Update current registration adding or removing prefixed tags wiht the output of the script
+        tagit->>consul: Update current registration adding or removing prefixed tags with the output of the script
     end
 ```
 
-## Todo
+## Examples
 
-- [ ] Adds a systemd unit file generator
+Here's an example of how to test TagIt:
+
+1. Start a Consul agent in development mode:
+   ```bash
+   consul agent -dev &
+   ```
+
+2. Register a service with Consul:
+   ```bash
+   curl --request PUT --data @examples/consul/my-service1.json http://127.0.0.1:8500/v1/agent/service/register
+   ```
+
+3. Run TagIt:
+   ```bash
+   ./tagit run --consul-addr=127.0.0.1:8500 --service-id=my-service1 --script=./examples/tagit/example.sh --interval=5s --tag-prefix=tagit
+   ```
+
+4. Clean up the tags:
+   ```bash
+   ./tagit cleanup --consul-addr=127.0.0.1:8500 --service-id=my-service1 --tag-prefix=tagit
+   ```
+
+## Contributing
+
+Contributions to TagIt are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+TagIt is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
