@@ -19,7 +19,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/bin/tagit run -s {{ .ServiceID }} -x {{ .Script }} -p {{ .TagPrefix }} -i {{ .Interval }}{{ if .Token }} -t {{ .Token }}{{ end }}{{ if .ConsulAddr }} -c {{ .ConsulAddr }}{{ end }}
-Environment=HOME=/var/run/taggit/{{ .ServiceID }}
+Environment=HOME=/var/run/tagit/{{ .ServiceID }}
 Restart=always
 User={{ .User }}
 Group={{ .Group }}
