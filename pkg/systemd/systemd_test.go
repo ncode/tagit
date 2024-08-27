@@ -3,6 +3,7 @@ package systemd
 import (
 	"strings"
 	"testing"
+	"text/template"
 )
 
 func TestRenderTemplate(t *testing.T) {
@@ -106,6 +107,34 @@ func TestRenderTemplate(t *testing.T) {
 			}
 		})
 	}
+
+	// Test case for template execution failure
+	t.Run("Template execution failure", func(t *testing.T) {
+		// Save the original template
+		originalTemplate := parsedTemplate
+
+		// Replace the template with one that will cause an execution error
+		parsedTemplate, _ = template.New("errorTemplate").Parse("{{.NonexistentField}}")
+
+		fields := &Fields{
+			ServiceID: "testservice",
+			Script:    "testscript",
+			TagPrefix: "testprefix",
+			Interval:  "testinterval",
+			User:      "testuser",
+			Group:     "testgroup",
+		}
+
+		_, err := RenderTemplate(fields)
+		if err == nil {
+			t.Errorf("RenderTemplate() expected error, got nil")
+		} else if !strings.Contains(err.Error(), "failed to execute template") {
+			t.Errorf("RenderTemplate() error = %v, expected 'failed to execute template' error", err)
+		}
+
+		// Restore the original template
+		parsedTemplate = originalTemplate
+	})
 }
 
 func TestValidateFields(t *testing.T) {
