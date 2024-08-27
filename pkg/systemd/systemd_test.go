@@ -130,9 +130,23 @@ func TestValidateFields(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "Missing multiple fields",
+			name: "Missing Script",
 			fields: Fields{
-				ServiceID: "test", Script: "test",
+				ServiceID: "test", TagPrefix: "test", Interval: "test", User: "test", Group: "test",
+			},
+			wantErr: true,
+		},
+		{
+			name: "Empty Script",
+			fields: Fields{
+				ServiceID: "test", Script: "", TagPrefix: "test", Interval: "test", User: "test", Group: "test",
+			},
+			wantErr: true,
+		},
+		{
+			name: "Missing multiple fields including Script",
+			fields: Fields{
+				ServiceID: "test", TagPrefix: "test",
 			},
 			wantErr: true,
 		},
@@ -140,8 +154,20 @@ func TestValidateFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := validateFields(&tt.fields); (err != nil) != tt.wantErr {
+			err := validateFields(&tt.fields)
+			if (err != nil) != tt.wantErr {
 				t.Errorf("validateFields() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("validateFields() expected error, got nil")
+				} else {
+					if tt.name == "Missing Script" || tt.name == "Empty Script" {
+						if !strings.Contains(err.Error(), "Script") {
+							t.Errorf("validateFields() error does not mention 'Script': %v", err)
+						}
+					}
+				}
 			}
 		})
 	}
