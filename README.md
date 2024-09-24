@@ -74,7 +74,6 @@ This command will output a systemd service file that you can use to run TagIt as
 
 TagIt interacts with Consul as follows:
 
->>>>>>> 6a3e346 (update readme)
 ```mermaid
 sequenceDiagram
     participant tagit
