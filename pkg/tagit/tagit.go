@@ -3,6 +3,7 @@ package tagit
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"slices"
 	"strings"
@@ -10,19 +11,17 @@ import (
 
 	"github.com/google/shlex"
 	"github.com/hashicorp/consul/api"
-	log "github.com/sirupsen/logrus"
 )
 
 // TagIt is the main struct for the tagit flow.
 type TagIt struct {
-	ConsulAddr      string
 	ServiceID       string
 	Script          string
 	Interval        time.Duration
-	Token           string
 	TagPrefix       string
 	client          ConsulClient
 	commandExecutor CommandExecutor
+	logger          *slog.Logger
 }
 
 // ConsulClient is an interface for the Consul client.
@@ -30,9 +29,9 @@ type ConsulClient interface {
 	Agent() ConsulAgent
 }
 
-// ConsulClientAgent is an interface for the Consul agent.
+// ConsulAgent is an interface for the Consul agent.
 type ConsulAgent interface {
-	Services() (map[string]*api.AgentService, error)
+	Service(string, *api.QueryOptions) (*api.AgentService, *api.QueryMeta, error)
 	ServiceRegister(*api.AgentServiceRegistration) error
 }
 
@@ -59,15 +58,21 @@ type CommandExecutor interface {
 type CmdExecutor struct{}
 
 func (e *CmdExecutor) Execute(command string) ([]byte, error) {
+	if command == "" {
+		return nil, fmt.Errorf("failed to execute: empty command")
+	}
 	args, err := shlex.Split(command)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to split command: %w", err)
+	}
+	if len(args) == 0 {
+		return nil, fmt.Errorf("failed to execute: no command after splitting")
 	}
 	return exec.Command(args[0], args[1:]...).Output()
 }
 
 // New creates a new TagIt struct.
-func New(consulClient ConsulClient, commandExecutor CommandExecutor, serviceID string, script string, interval time.Duration, tagPrefix string) *TagIt {
+func New(consulClient ConsulClient, commandExecutor CommandExecutor, serviceID string, script string, interval time.Duration, tagPrefix string, logger *slog.Logger) *TagIt {
 	return &TagIt{
 		ServiceID:       serviceID,
 		Script:          script,
@@ -75,24 +80,24 @@ func New(consulClient ConsulClient, commandExecutor CommandExecutor, serviceID s
 		TagPrefix:       tagPrefix,
 		client:          consulClient,
 		commandExecutor: commandExecutor,
+		logger:          logger,
 	}
 }
 
 // Run will run the tagit flow and tag consul services based on the script output
 func (t *TagIt) Run(ctx context.Context) {
 	ticker := time.NewTicker(t.Interval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
-			ticker.Stop()
 			return
 		case <-ticker.C:
-			err := t.updateServiceTags()
-			if err != nil {
-				log.WithFields(log.Fields{
-					"service": t.ServiceID,
-					"error":   err,
-				}).Error("error updating service tags")
+			if err := t.updateServiceTags(); err != nil {
+				t.logger.Error("error updating service tags",
+					"service", t.ServiceID,
+					"error", err)
 			}
 		}
 	}
@@ -104,15 +109,28 @@ func (t *TagIt) CleanupTags() error {
 	if err != nil {
 		return fmt.Errorf("error getting service: %w", err)
 	}
-	return t.updateConsulService(service, []string{})
+
+	// Filter out tags with the specified prefix
+	cleanedTags := make([]string, 0)
+	for _, tag := range service.Tags {
+		if !strings.HasPrefix(tag, t.TagPrefix+"-") {
+			cleanedTags = append(cleanedTags, tag)
+		}
+	}
+
+	// Update the service with the cleaned tags
+	if err := t.updateConsulService(service, cleanedTags); err != nil {
+		return fmt.Errorf("error cleaning up tags: %w", err)
+	}
+
+	return nil
 }
 
 // runScript runs a command and returns the output.
 func (t *TagIt) runScript() ([]byte, error) {
-	log.WithFields(log.Fields{
-		"service": t.ServiceID,
-		"command": t.Script,
-	}).Info("running command")
+	t.logger.Info("running command",
+		"service", t.ServiceID,
+		"command", t.Script)
 	return t.commandExecutor.Execute(t.Script)
 }
 
@@ -139,7 +157,7 @@ func (t *TagIt) updateServiceTags() error {
 func (t *TagIt) generateNewTags() ([]string, error) {
 	out, err := t.runScript()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error running script: %w", err)
 	}
 	return t.parseScriptOutput(out), nil
 }
@@ -150,7 +168,12 @@ func (t *TagIt) updateConsulService(service *api.AgentService, newTags []string)
 	updatedTags, shouldTag := t.needsTag(registration.Tags, newTags)
 	if shouldTag {
 		registration.Tags = updatedTags
-		return t.client.Agent().ServiceRegister(registration)
+		if err := t.client.Agent().ServiceRegister(registration); err != nil {
+			return fmt.Errorf("error registering service: %w", err)
+		}
+		t.logger.Info("updated service tags",
+			"service", t.ServiceID,
+			"tags", updatedTags)
 	}
 	return nil
 }
@@ -164,37 +187,39 @@ func (t *TagIt) parseScriptOutput(output []byte) []string {
 	return tags
 }
 
-// Copy *api.AgentService to *api.AgentServiceRegistration
+// copyServiceToRegistration copies *api.AgentService to *api.AgentServiceRegistration
 func (t *TagIt) copyServiceToRegistration(service *api.AgentService) *api.AgentServiceRegistration {
-	return &api.AgentServiceRegistration{
+	registration := &api.AgentServiceRegistration{
 		ID:      service.ID,
 		Name:    service.Service,
 		Tags:    service.Tags,
 		Port:    service.Port,
 		Address: service.Address,
 		Kind:    service.Kind,
-		Weights: &service.Weights,
 		Meta:    service.Meta,
+		Weights: &api.AgentWeights{
+			Passing: service.Weights.Passing,
+			Warning: service.Weights.Warning,
+		},
 	}
+	return registration
 }
 
 // getService returns the registered service.
-func (t *TagIt) getService() (service *api.AgentService, err error) {
+// getService returns the registered service.
+func (t *TagIt) getService() (*api.AgentService, error) {
 	agent := t.client.Agent()
-	services, err := agent.Services()
+	service, _, err := agent.Service(t.ServiceID, nil)
 	if err != nil {
-		return service, err
+		return nil, fmt.Errorf("error getting service %s: %w", t.ServiceID, err)
 	}
-
-	service, ok := services[t.ServiceID]
-	if !ok {
-		return service, fmt.Errorf("service %s not found", t.ServiceID)
+	if service == nil {
+		return nil, fmt.Errorf("service %s not found", t.ServiceID)
 	}
-
-	return service, err
+	return service, nil
 }
 
-// needsTag checks if the service needs to be tagged. Based of the diff of the current and updated tags, filtering out tags that are already tagged.
+// needsTag checks if the service needs to be tagged. Based on the diff of the current and updated tags, filtering out tags that are already tagged.
 // but we never override the original tags from the consul service registration
 func (t *TagIt) needsTag(current []string, update []string) (updatedTags []string, shouldTag bool) {
 	diff := t.diffTags(current, update)
@@ -210,8 +235,8 @@ func (t *TagIt) needsTag(current []string, update []string) (updatedTags []strin
 
 // excludeTagged filters out tags that are already tagged with the prefix.
 func (t *TagIt) excludeTagged(tags []string) (filteredTags []string, tagged bool) {
+	filteredTags = make([]string, 0) // Initialize with empty slice instead of nil
 	for _, tag := range tags {
-		// Using HasPrefix for a more accurate prefix check
 		if strings.HasPrefix(tag, t.TagPrefix+"-") {
 			tagged = true
 		} else {
@@ -222,35 +247,29 @@ func (t *TagIt) excludeTagged(tags []string) (filteredTags []string, tagged bool
 }
 
 // diffTags compares two slices of strings and returns the difference.
-func (t *TagIt) diffTags(current []string, update []string) []string {
-	tagMap := make(map[string]bool)
-	var diff []string
+func (t *TagIt) diffTags(current, update []string) []string {
+	diff := make([]string, 0)
+	currentSet := make(map[string]bool)
+	updateSet := make(map[string]bool)
 
-	// Map each tag in the update slice to true
+	// Create sets for both current and update
+	for _, tag := range current {
+		currentSet[tag] = true
+	}
 	for _, tag := range update {
-		tagMap[tag] = true
+		updateSet[tag] = true
 	}
 
-	// Add tags from current that are not in update
-	for _, tag := range current {
-		if _, found := tagMap[tag]; !found {
+	// Find tags in update that are not in current
+	for tag := range updateSet {
+		if !currentSet[tag] {
 			diff = append(diff, tag)
 		}
 	}
 
-	// Reset the map for reuse
-	for k := range tagMap {
-		delete(tagMap, k)
-	}
-
-	// Map each tag in the current slice to true
-	for _, tag := range current {
-		tagMap[tag] = true
-	}
-
-	// Add tags from update that are not in current
-	for _, tag := range update {
-		if _, found := tagMap[tag]; !found {
+	// Find tags in current that are not in update
+	for tag := range currentSet {
+		if !updateSet[tag] {
 			diff = append(diff, tag)
 		}
 	}
