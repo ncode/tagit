@@ -1,5 +1,4 @@
-# Start from scratch for a minimal image
-FROM scratch
+FROM oraclelinux:9
 
 # Copy the pre-compiled TagIt binary
 COPY tagit /usr/local/bin/tagit
