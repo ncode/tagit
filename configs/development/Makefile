@@ -1,7 +1,7 @@
 .PHONY: build docker-build down up ensure-consul
 all: build ensure-consul docker-build down up
 
-CONSUL_VERSION := $(shell curl -sL https://releases.hashicorp.com/consul/ | grep -Eo 'consul_[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -1 | cut -d'_' -f2)
+CONSUL_VERSION := $(shell curl -sL https://releases.hashicorp.com/consul/ | grep -v -- -rc | grep -Eo 'consul_[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -1 | cut -d'_' -f2)
 CONSUL_ZIP := consul_$(CONSUL_VERSION)_linux_arm64.zip
 
 build:
