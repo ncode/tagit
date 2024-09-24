@@ -25,20 +25,9 @@ A few scenarios where this can be useful:
 
 ```bash
 $ git clone github.com/ncode/tagit
-$ go build
-$ consul agent -dev &
-$ curl --request PUT --data @examples/consul/my-service1.json http://127.0.0.1:8500/v1/agent/service/register
-$ ./tagit run --consul-addr=127.0.0.1:8500 --service-id=my-service1 --script=./examples/tagit/example.sh --interval=5s --tag-prefix=tagit
-INFO[0000] running command                               command=./examples/tagit/example.sh service=my-service1
-INFO[0000] updating service tags                         service=my-service1 tags="[v1 tagit-nice tagit-it tagit-works]"
-INFO[0005] running command                               command=./examples/tagit/example.sh service=my-service1
-INFO[0010] running command                               command=./examples/tagit/example.sh service=my-service1
-INFO[0015] running command                               command=./examples/tagit/example.sh service=my-service1
-$ ./tagit cleanup --consul-addr=127.0.0.1:8500 --service-id=my-service1 --tag-prefix=tagit
-INFO[0000] current service tags                          service=my-service1 tags="[v1 tagit-nice tagit-it tagit-works]"
-INFO[0000] updating service tags                         service=my-service1 tags="[v1]"
+$ cd configs/development
+$ make
 ```
-
 
 ```mermaid
 sequenceDiagram

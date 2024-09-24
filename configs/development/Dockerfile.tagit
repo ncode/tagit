@@ -1,0 +1,10 @@
+FROM oraclelinux:9
+
+# Copy the pre-compiled TagIt binary
+COPY tagit /usr/local/bin/tagit
+
+# Set the entrypoint to TagIt
+ENTRYPOINT ["/usr/local/bin/tagit"]
+
+# Default command
+CMD ["--help"]

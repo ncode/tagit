@@ -1,0 +1,17 @@
+services:
+  consul:
+    image: ncode/consul:dev
+    command: agent -dev -client=0.0.0.0  -config-dir /config
+    ports:
+      - "8500:8500"
+    volumes:
+      - ./config/consul:/config
+
+  tagit:
+    image: ncode/tagit:dev
+    depends_on:
+      - consul
+    command: run --consul-addr=consul:8500 --service-id=my-service1 --script=/config/example.sh --interval=5s --tag-prefix=tagit
+    volumes:
+      - ./config/tagit:/config
+

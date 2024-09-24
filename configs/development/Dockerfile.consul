@@ -1,0 +1,11 @@
+# Start from scratch for a minimal image
+FROM scratch
+
+# Copy the Consul binary
+COPY consul /consul
+
+# Set the entrypoint to Consul
+ENTRYPOINT ["/consul"]
+
+# Default command
+CMD ["-dev -server -bootstrap-expect=1"]
