@@ -260,6 +260,38 @@ func TestGetOptionalFlags(t *testing.T) {
 	}
 }
 
+func TestInitTemplateParsingSuccess(t *testing.T) {
+	// Test that the global parsedTemplate was initialized correctly
+	if parsedTemplate == nil {
+		t.Error("parsedTemplate should be initialized during package init")
+	}
+
+	// Verify the template can execute with valid data
+	fields := &Fields{
+		ServiceID: "test-service",
+		Script:    "/path/to/script.sh",
+		TagPrefix: "test",
+		Interval:  "30s",
+		User:      "testuser",
+		Group:     "testgroup",
+	}
+
+	result, err := RenderTemplate(fields)
+	if err != nil {
+		t.Errorf("Template execution failed: %v", err)
+	}
+	if result == "" {
+		t.Error("Template execution returned empty result")
+	}
+
+	// Verify it contains expected systemd sections
+	if !strings.Contains(result, "[Unit]") ||
+		!strings.Contains(result, "[Service]") ||
+		!strings.Contains(result, "[Install]") {
+		t.Errorf("Template result missing expected systemd sections: %s", result)
+	}
+}
+
 func stringSlicesEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
