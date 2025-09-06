@@ -189,7 +189,7 @@ func TestRootCmdHelp(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetArgs([]string{"--help"})
-	
+
 	err := rootCmd.Execute()
 	assert.NoError(t, err)
 
