@@ -131,11 +131,113 @@ func TestCleanupCmdHelp(t *testing.T) {
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetArgs([]string{"cleanup", "--help"})
-	
+
 	err := cmd.Execute()
 	assert.NoError(t, err)
 
 	output := buf.String()
 	assert.Contains(t, output, "cleanup removes all services with the tag prefix")
 	assert.Contains(t, output, "Usage:")
+}
+
+func TestCleanupCmdExecution(t *testing.T) {
+	tests := []struct {
+		name          string
+		consulAddr    string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "Invalid consul address",
+			consulAddr:    "invalid-consul-address",
+			expectError:   true,
+			errorContains: "failed to clean up tags",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cobra.Command{Use: "tagit"}
+			cmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
+			cmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
+			cmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
+			cmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
+			cmd.PersistentFlags().StringP("token", "t", "", "consul token")
+
+			testCleanupCmd := &cobra.Command{
+				Use:   "cleanup",
+				Short: "cleanup removes all services with the tag prefix from a given consul service",
+				RunE:  cleanupCmd.RunE,
+			}
+			cmd.AddCommand(testCleanupCmd)
+
+			var stderr bytes.Buffer
+			cmd.SetErr(&stderr)
+			cmd.SetArgs([]string{
+				"cleanup",
+				"--service-id=test-service",
+				"--script=/tmp/test.sh",
+				"--consul-addr=" + tt.consulAddr,
+				"--tag-prefix=test",
+			})
+
+			err := cmd.Execute()
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestCleanupCmdFlagRetrieval(t *testing.T) {
+	// Test that all flag retrievals work correctly within the RunE function
+	cmd := &cobra.Command{Use: "tagit"}
+	cmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
+	cmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
+	cmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
+	cmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
+	cmd.PersistentFlags().StringP("token", "t", "", "consul token")
+
+	var capturedValues map[string]string
+
+	testCleanupCmd := &cobra.Command{
+		Use:   "cleanup",
+		Short: "cleanup removes all services with the tag prefix from a given consul service",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Test the same flag access pattern used in the actual cleanup command
+			capturedValues = make(map[string]string)
+			capturedValues["consul-addr"] = cmd.InheritedFlags().Lookup("consul-addr").Value.String()
+			capturedValues["token"] = cmd.InheritedFlags().Lookup("token").Value.String()
+			capturedValues["service-id"] = cmd.InheritedFlags().Lookup("service-id").Value.String()
+			capturedValues["tag-prefix"] = cmd.InheritedFlags().Lookup("tag-prefix").Value.String()
+
+			// Don't actually try to connect to consul - just test flag access
+			return nil
+		},
+	}
+	cmd.AddCommand(testCleanupCmd)
+
+	cmd.SetArgs([]string{
+		"cleanup",
+		"--service-id=test-service",
+		"--script=/tmp/test.sh",
+		"--consul-addr=localhost:9500",
+		"--tag-prefix=test-prefix",
+		"--token=test-token",
+	})
+
+	err := cmd.Execute()
+	assert.NoError(t, err)
+
+	// Verify all values were captured correctly
+	assert.Equal(t, "localhost:9500", capturedValues["consul-addr"])
+	assert.Equal(t, "test-token", capturedValues["token"])
+	assert.Equal(t, "test-service", capturedValues["service-id"])
+	assert.Equal(t, "test-prefix", capturedValues["tag-prefix"])
 }
