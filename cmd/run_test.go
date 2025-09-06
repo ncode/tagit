@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/consul/api"
+	"github.com/ncode/tagit/pkg/consul"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 )
@@ -483,4 +485,197 @@ func TestRunCmdCompleteFlow(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunCmdWithMockFactory(t *testing.T) {
+	// Save and restore the original factory
+	originalFactory := consul.Factory
+	defer func() {
+		consul.Factory = originalFactory
+	}()
+
+	t.Run("Successful run with mock", func(t *testing.T) {
+		// Track if service was registered at least once
+		registered := false
+
+		// Create a mock agent that simulates a service
+		mockAgent := &MockAgent{
+			ServiceFunc: func(serviceID string, q *api.QueryOptions) (*api.AgentService, *api.QueryMeta, error) {
+				return &api.AgentService{
+					ID:      serviceID,
+					Service: "test",
+					Tags:    []string{"existing-tag"},
+				}, nil, nil
+			},
+			ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
+				// Verify that new tags were added
+				registered = true
+				assert.Contains(t, reg.Tags, "existing-tag")
+				assert.Contains(t, reg.Tags, "test-tag1")
+				assert.Contains(t, reg.Tags, "test-tag2")
+				return nil
+			},
+		}
+
+		// Create mock client with the mock agent
+		mockClient := &MockConsulClient{
+			MockAgent: mockAgent,
+		}
+
+		// Set up the mock factory
+		mockFactory := &consul.MockFactory{
+			MockClient: mockClient,
+		}
+		consul.SetFactory(mockFactory)
+
+		// Create a new command instance for this test
+		cmd := &cobra.Command{
+			Use:  "run",
+			RunE: runCmd.RunE,
+		}
+		// Set up parent command for flags inheritance
+		parent := &cobra.Command{}
+		parent.PersistentFlags().String("consul-addr", "127.0.0.1:8500", "")
+		parent.PersistentFlags().String("token", "", "")
+		parent.PersistentFlags().String("service-id", "test-service", "")
+		parent.PersistentFlags().String("tag-prefix", "test", "")
+		parent.PersistentFlags().String("script", "echo 'tag1 tag2'", "")
+		parent.PersistentFlags().String("interval", "100ms", "") // Short interval for testing
+		parent.AddCommand(cmd)
+
+		// Run the command in a goroutine with timeout
+		done := make(chan error)
+		go func() {
+			done <- cmd.RunE(cmd, []string{})
+		}()
+
+		// Let it run for a short time
+		time.Sleep(250 * time.Millisecond)
+
+		// The command should have registered the service at least once
+		assert.True(t, registered, "Service should have been registered at least once")
+
+		// Note: The run command runs forever, so we can't test it finishing cleanly
+		// This test verifies it starts correctly and processes at least one update
+	})
+
+	t.Run("Run with invalid interval", func(t *testing.T) {
+		// Set up a valid mock factory
+		mockClient := &MockConsulClient{
+			MockAgent: &MockAgent{},
+		}
+		mockFactory := &consul.MockFactory{
+			MockClient: mockClient,
+		}
+		consul.SetFactory(mockFactory)
+
+		// Create a new command instance for this test
+		cmd := &cobra.Command{
+			Use:  "run",
+			RunE: runCmd.RunE,
+		}
+		// Set up parent command with invalid interval
+		parent := &cobra.Command{}
+		parent.PersistentFlags().String("consul-addr", "127.0.0.1:8500", "")
+		parent.PersistentFlags().String("token", "", "")
+		parent.PersistentFlags().String("service-id", "test-service", "")
+		parent.PersistentFlags().String("tag-prefix", "test", "")
+		parent.PersistentFlags().String("script", "echo 'tag1'", "")
+		parent.PersistentFlags().String("interval", "invalid", "")
+		parent.AddCommand(cmd)
+
+		// Run the command - should fail
+		err := cmd.RunE(cmd, []string{})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid interval")
+	})
+
+	t.Run("Run with empty interval", func(t *testing.T) {
+		// Set up a valid mock factory
+		mockClient := &MockConsulClient{
+			MockAgent: &MockAgent{},
+		}
+		mockFactory := &consul.MockFactory{
+			MockClient: mockClient,
+		}
+		consul.SetFactory(mockFactory)
+
+		// Create a new command instance for this test
+		cmd := &cobra.Command{
+			Use:  "run",
+			RunE: runCmd.RunE,
+		}
+		// Set up parent command with empty interval
+		parent := &cobra.Command{}
+		parent.PersistentFlags().String("consul-addr", "127.0.0.1:8500", "")
+		parent.PersistentFlags().String("token", "", "")
+		parent.PersistentFlags().String("service-id", "test-service", "")
+		parent.PersistentFlags().String("tag-prefix", "test", "")
+		parent.PersistentFlags().String("script", "echo 'tag1'", "")
+		parent.PersistentFlags().String("interval", "", "")
+		parent.AddCommand(cmd)
+
+		// Run the command - should fail
+		err := cmd.RunE(cmd, []string{})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "interval is required")
+	})
+
+	t.Run("Run with zero interval", func(t *testing.T) {
+		// Set up a valid mock factory
+		mockClient := &MockConsulClient{
+			MockAgent: &MockAgent{},
+		}
+		mockFactory := &consul.MockFactory{
+			MockClient: mockClient,
+		}
+		consul.SetFactory(mockFactory)
+
+		// Create a new command instance for this test
+		cmd := &cobra.Command{
+			Use:  "run",
+			RunE: runCmd.RunE,
+		}
+		// Set up parent command with zero interval
+		parent := &cobra.Command{}
+		parent.PersistentFlags().String("consul-addr", "127.0.0.1:8500", "")
+		parent.PersistentFlags().String("token", "", "")
+		parent.PersistentFlags().String("service-id", "test-service", "")
+		parent.PersistentFlags().String("tag-prefix", "test", "")
+		parent.PersistentFlags().String("script", "echo 'tag1'", "")
+		parent.PersistentFlags().String("interval", "0", "")
+		parent.AddCommand(cmd)
+
+		// Run the command - should fail
+		err := cmd.RunE(cmd, []string{})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "interval is required")
+	})
+
+	t.Run("Run with connection error", func(t *testing.T) {
+		// Set up a factory that returns an error
+		mockFactory := &consul.MockFactory{
+			MockError: fmt.Errorf("connection failed"),
+		}
+		consul.SetFactory(mockFactory)
+
+		// Create a new command instance for this test
+		cmd := &cobra.Command{
+			Use:  "run",
+			RunE: runCmd.RunE,
+		}
+		// Set up parent command for flags inheritance
+		parent := &cobra.Command{}
+		parent.PersistentFlags().String("consul-addr", "127.0.0.1:8500", "")
+		parent.PersistentFlags().String("token", "", "")
+		parent.PersistentFlags().String("service-id", "test-service", "")
+		parent.PersistentFlags().String("tag-prefix", "test", "")
+		parent.PersistentFlags().String("script", "echo 'tag1'", "")
+		parent.PersistentFlags().String("interval", "1s", "")
+		parent.AddCommand(cmd)
+
+		// Run the command - should fail
+		err := cmd.RunE(cmd, []string{})
+		assert.Error(t, err)
+	})
 }

@@ -24,7 +24,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hashicorp/consul/api"
+	"github.com/ncode/tagit/pkg/consul"
 	"github.com/ncode/tagit/pkg/tagit"
 	"github.com/spf13/cobra"
 )
@@ -59,22 +59,21 @@ example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 			return fmt.Errorf("invalid interval %q: %w", interval, err)
 		}
 
-		config := api.DefaultConfig()
-		config.Address, err = cmd.InheritedFlags().GetString("consul-addr")
+		consulAddr, err := cmd.InheritedFlags().GetString("consul-addr")
 		if err != nil {
 			logger.Error("Failed to get consul-addr flag", "error", err)
 			return err
 		}
-		config.Token, err = cmd.InheritedFlags().GetString("token")
+		token, err := cmd.InheritedFlags().GetString("token")
 		if err != nil {
 			logger.Error("Failed to get token flag", "error", err)
 			return err
 		}
 
-		consulClient, err := api.NewClient(config)
+		consulClient, err := consul.CreateClient(consulAddr, token)
 		if err != nil {
 			logger.Error("Failed to create Consul client", "error", err)
-			return fmt.Errorf("failed to create Consul client: %w", err)
+			return err
 		}
 
 		serviceID, err := cmd.InheritedFlags().GetString("service-id")
@@ -94,7 +93,7 @@ example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 		}
 
 		t := tagit.New(
-			tagit.NewConsulAPIWrapper(consulClient),
+			consulClient,
 			&tagit.CmdExecutor{},
 			serviceID,
 			script,
