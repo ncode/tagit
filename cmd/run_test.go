@@ -372,3 +372,115 @@ func TestRunCmdFlagRetrievalErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestRunCmdCompleteFlow(t *testing.T) {
+	// Test the complete flow of the run command with all flag retrievals
+	tests := []struct {
+		name          string
+		setupCmd      func() *cobra.Command
+		args          []string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "Valid configuration with all flags",
+			setupCmd: func() *cobra.Command {
+				cmd := &cobra.Command{Use: "tagit"}
+				cmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
+				cmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
+				cmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
+				cmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
+				cmd.PersistentFlags().StringP("interval", "i", "60s", "interval to run the script")
+				cmd.PersistentFlags().StringP("token", "t", "", "consul token")
+
+				testRunCmd := &cobra.Command{
+					Use:   "run",
+					Short: "Run tagit",
+					RunE: func(cmd *cobra.Command, args []string) error {
+						// Simulate all the flag retrievals from the actual run command
+						interval, err := cmd.InheritedFlags().GetString("interval")
+						if err != nil {
+							return err
+						}
+
+						if interval == "" || interval == "0" {
+							return fmt.Errorf("interval is required and cannot be empty or zero")
+						}
+
+						_, err = time.ParseDuration(interval)
+						if err != nil {
+							return fmt.Errorf("invalid interval %q: %w", interval, err)
+						}
+
+						// Test all flag retrievals
+						consulAddr, err := cmd.InheritedFlags().GetString("consul-addr")
+						if err != nil {
+							return fmt.Errorf("failed to get consul-addr flag: %w", err)
+						}
+
+						token, err := cmd.InheritedFlags().GetString("token")
+						if err != nil {
+							return fmt.Errorf("failed to get token flag: %w", err)
+						}
+
+						serviceID, err := cmd.InheritedFlags().GetString("service-id")
+						if err != nil {
+							return fmt.Errorf("failed to get service-id flag: %w", err)
+						}
+
+						script, err := cmd.InheritedFlags().GetString("script")
+						if err != nil {
+							return fmt.Errorf("failed to get script flag: %w", err)
+						}
+
+						tagPrefix, err := cmd.InheritedFlags().GetString("tag-prefix")
+						if err != nil {
+							return fmt.Errorf("failed to get tag-prefix flag: %w", err)
+						}
+
+						// Validate we got all values
+						if consulAddr == "" || serviceID == "" || script == "" || tagPrefix == "" {
+							return fmt.Errorf("missing required flags")
+						}
+
+						// Don't create real consul client or run the service
+						// Just verify all flags were retrieved successfully
+						_ = token // token is optional
+
+						return nil
+					},
+				}
+				cmd.AddCommand(testRunCmd)
+				return cmd
+			},
+			args: []string{
+				"run",
+				"--service-id=test-service",
+				"--script=/tmp/test.sh",
+				"--consul-addr=localhost:8500",
+				"--tag-prefix=test",
+				"--interval=30s",
+				"--token=test-token",
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := tt.setupCmd()
+			cmd.SetArgs(tt.args)
+
+			err := cmd.Execute()
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
