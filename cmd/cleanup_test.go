@@ -46,7 +46,7 @@ func TestCleanupCmd(t *testing.T) {
 			testCleanupCmd := &cobra.Command{
 				Use:   "cleanup",
 				Short: "cleanup removes all services with the tag prefix",
-				Run:   cleanupCmd.Run,
+				RunE:  cleanupCmd.RunE,
 			}
 			cmd.AddCommand(testCleanupCmd)
 
@@ -124,7 +124,7 @@ func TestCleanupCmdHelp(t *testing.T) {
 	testCleanupCmd := &cobra.Command{
 		Use:   "cleanup",
 		Short: "cleanup removes all services with the tag prefix from a given consul service",
-		Run:   cleanupCmd.Run,
+		RunE:  cleanupCmd.RunE,
 	}
 	cmd.AddCommand(testCleanupCmd)
 

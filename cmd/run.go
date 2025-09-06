@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -36,7 +37,7 @@ var runCmd = &cobra.Command{
 
 example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 `,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 			Level: slog.LevelInfo,
 		}))
@@ -44,52 +45,52 @@ example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 		interval, err := cmd.InheritedFlags().GetString("interval")
 		if err != nil {
 			logger.Error("Failed to get interval flag", "error", err)
-			os.Exit(1)
+			return err
 		}
 
 		if interval == "" || interval == "0" {
 			logger.Error("Interval is required")
-			os.Exit(1)
+			return fmt.Errorf("interval is required and cannot be empty or zero")
 		}
 
 		validInterval, err := time.ParseDuration(interval)
 		if err != nil {
 			logger.Error("Invalid interval", "interval", interval, "error", err)
-			os.Exit(1)
+			return fmt.Errorf("invalid interval %q: %w", interval, err)
 		}
 
 		config := api.DefaultConfig()
 		config.Address, err = cmd.InheritedFlags().GetString("consul-addr")
 		if err != nil {
 			logger.Error("Failed to get consul-addr flag", "error", err)
-			os.Exit(1)
+			return err
 		}
 		config.Token, err = cmd.InheritedFlags().GetString("token")
 		if err != nil {
 			logger.Error("Failed to get token flag", "error", err)
-			os.Exit(1)
+			return err
 		}
 
 		consulClient, err := api.NewClient(config)
 		if err != nil {
 			logger.Error("Failed to create Consul client", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to create Consul client: %w", err)
 		}
 
 		serviceID, err := cmd.InheritedFlags().GetString("service-id")
 		if err != nil {
 			logger.Error("Failed to get service-id flag", "error", err)
-			os.Exit(1)
+			return err
 		}
 		script, err := cmd.InheritedFlags().GetString("script")
 		if err != nil {
 			logger.Error("Failed to get script flag", "error", err)
-			os.Exit(1)
+			return err
 		}
 		tagPrefix, err := cmd.InheritedFlags().GetString("tag-prefix")
 		if err != nil {
 			logger.Error("Failed to get tag-prefix flag", "error", err)
-			os.Exit(1)
+			return err
 		}
 
 		t := tagit.New(
@@ -124,6 +125,7 @@ example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 		t.Run(ctx)
 
 		logger.Info("Tagit has stopped")
+		return nil
 	},
 }
 

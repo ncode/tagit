@@ -16,6 +16,7 @@ limitations under the License.
 package cmd
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -28,7 +29,7 @@ import (
 var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
 	Short: "cleanup removes all services with the tag prefix from a given consul service",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 			Level: slog.LevelInfo,
 		}))
@@ -40,7 +41,7 @@ var cleanupCmd = &cobra.Command{
 		consulClient, err := api.NewClient(config)
 		if err != nil {
 			logger.Error("Failed to create Consul client", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to create Consul client: %w", err)
 		}
 
 		serviceID := cmd.InheritedFlags().Lookup("service-id").Value.String()
@@ -61,10 +62,11 @@ var cleanupCmd = &cobra.Command{
 		err = t.CleanupTags()
 		if err != nil {
 			logger.Error("Failed to clean up tags", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to clean up tags: %w", err)
 		}
 
 		logger.Info("Tag cleanup completed successfully")
+		return nil
 	},
 }
 

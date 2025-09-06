@@ -34,6 +34,12 @@ func TestRunCmd(t *testing.T) {
 			expectError:   true,
 			errorContains: "required flag(s) \"script\" not set",
 		},
+		{
+			name:          "Invalid interval format",
+			args:          []string{"run", "--service-id=test-service", "--script=/tmp/test.sh", "--interval=invalid"},
+			expectError:   true,
+			errorContains: "invalid interval",
+		},
 	}
 
 	for _, tt := range tests {
@@ -53,7 +59,7 @@ func TestRunCmd(t *testing.T) {
 			testRunCmd := &cobra.Command{
 				Use:   "run",
 				Short: "Run tagit",
-				Run:   runCmd.Run,
+				RunE:  runCmd.RunE,
 			}
 			cmd.AddCommand(testRunCmd)
 
