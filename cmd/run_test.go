@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -496,7 +497,7 @@ func TestRunCmdWithMockFactory(t *testing.T) {
 
 	t.Run("Successful run with mock", func(t *testing.T) {
 		// Track if service was registered at least once
-		registered := false
+		var registered atomic.Bool
 
 		// Create a mock agent that simulates a service
 		mockAgent := &MockAgent{
@@ -509,7 +510,7 @@ func TestRunCmdWithMockFactory(t *testing.T) {
 			},
 			ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
 				// Verify that new tags were added
-				registered = true
+				registered.Store(true)
 				assert.Contains(t, reg.Tags, "existing-tag")
 				assert.Contains(t, reg.Tags, "test-tag1")
 				assert.Contains(t, reg.Tags, "test-tag2")
@@ -553,7 +554,7 @@ func TestRunCmdWithMockFactory(t *testing.T) {
 		time.Sleep(250 * time.Millisecond)
 
 		// The command should have registered the service at least once
-		assert.True(t, registered, "Service should have been registered at least once")
+		assert.True(t, registered.Load(), "Service should have been registered at least once")
 
 		// Note: The run command runs forever, so we can't test it finishing cleanly
 		// This test verifies it starts correctly and processes at least one update
