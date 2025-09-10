@@ -20,11 +20,10 @@ type TagIt struct {
 	Script          string
 	Interval        time.Duration
 	TagPrefix       string
-	client          consul.ConsulClient
+	client          consul.Client
 	commandExecutor CommandExecutor
 	logger          *slog.Logger
 }
-
 
 // CommandExecutor is an interface for running commands.
 type CommandExecutor interface {
@@ -48,7 +47,7 @@ func (e *CmdExecutor) Execute(command string) ([]byte, error) {
 }
 
 // New creates a new TagIt struct.
-func New(consulClient consul.ConsulClient, commandExecutor CommandExecutor, serviceID string, script string, interval time.Duration, tagPrefix string, logger *slog.Logger) *TagIt {
+func New(consulClient consul.Client, commandExecutor CommandExecutor, serviceID string, script string, interval time.Duration, tagPrefix string, logger *slog.Logger) *TagIt {
 	return &TagIt{
 		ServiceID:       serviceID,
 		Script:          script,

@@ -21,42 +21,42 @@ import (
 	"github.com/hashicorp/consul/api"
 )
 
-// ConsulClient is an interface for the Consul client.
-type ConsulClient interface {
-	Agent() ConsulAgent
+// Client is an interface for the Consul client.
+type Client interface {
+	Agent() Agent
 }
 
-// ConsulAgent is an interface for the Consul agent.
-type ConsulAgent interface {
+// Agent is an interface for the Consul agent.
+type Agent interface {
 	Service(string, *api.QueryOptions) (*api.AgentService, *api.QueryMeta, error)
 	ServiceRegister(*api.AgentServiceRegistration) error
 }
 
-// ConsulAPIWrapper wraps the Consul API client to conform to the ConsulClient interface.
-type ConsulAPIWrapper struct {
+// ApiWrapper wraps the Consul API client to conform to the Client interface.
+type ApiWrapper struct {
 	client *api.Client
 }
 
-// NewConsulAPIWrapper creates a new instance of ConsulAPIWrapper.
-func NewConsulAPIWrapper(client *api.Client) *ConsulAPIWrapper {
-	return &ConsulAPIWrapper{client: client}
+// NewConsulAPIWrapper creates a new instance of ApiWrapper.
+func NewConsulAPIWrapper(client *api.Client) *ApiWrapper {
+	return &ApiWrapper{client: client}
 }
 
-// Agent returns an object that conforms to the ConsulAgent interface.
-func (w *ConsulAPIWrapper) Agent() ConsulAgent {
+// Agent returns an object that conforms to the Agent interface.
+func (w *ApiWrapper) Agent() Agent {
 	return w.client.Agent()
 }
 
 // ClientFactory is an interface for creating Consul clients
 type ClientFactory interface {
-	NewClient(address, token string) (ConsulClient, error)
+	NewClient(address, token string) (Client, error)
 }
 
 // DefaultFactory creates real Consul clients
 type DefaultFactory struct{}
 
 // NewClient creates a new Consul client with the given configuration
-func (f *DefaultFactory) NewClient(address, token string) (ConsulClient, error) {
+func (f *DefaultFactory) NewClient(address, token string) (Client, error) {
 	config := api.DefaultConfig()
 	config.Address = address
 	config.Token = token
@@ -71,12 +71,12 @@ func (f *DefaultFactory) NewClient(address, token string) (ConsulClient, error) 
 
 // MockFactory creates mock Consul clients for testing
 type MockFactory struct {
-	MockClient ConsulClient
+	MockClient Client
 	MockError  error
 }
 
 // NewClient returns the mock client or error
-func (f *MockFactory) NewClient(address, token string) (ConsulClient, error) {
+func (f *MockFactory) NewClient(address, token string) (Client, error) {
 	if f.MockError != nil {
 		return nil, f.MockError
 	}
@@ -97,6 +97,6 @@ func ResetFactory() {
 }
 
 // CreateClient is a convenience function that uses the global factory
-func CreateClient(address, token string) (ConsulClient, error) {
+func CreateClient(address, token string) (Client, error) {
 	return Factory.NewClient(address, token)
 }

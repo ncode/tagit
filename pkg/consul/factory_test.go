@@ -13,7 +13,7 @@ type MockConsulClient struct {
 	MockAgent *MockAgent
 }
 
-func (m *MockConsulClient) Agent() ConsulAgent {
+func (m *MockConsulClient) Agent() Agent {
 	return m.MockAgent
 }
 

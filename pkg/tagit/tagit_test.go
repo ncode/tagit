@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// MockConsulClient implements the ConsulClient interface for testing.
+// MockConsulClient implements the Client interface for testing.
 type MockConsulClient struct {
 	MockAgent *MockAgent
 }
 
-func (m *MockConsulClient) Agent() consul.ConsulAgent {
+func (m *MockConsulClient) Agent() consul.Agent {
 	return m.MockAgent
 }
 
@@ -607,21 +607,21 @@ func TestConsulInterfaceCompatibility(t *testing.T) {
 			return nil
 		},
 	}
-	
+
 	mockClient := &MockConsulClient{
 		MockAgent: mockAgent,
 	}
-	
-	// Verify that MockConsulClient implements consul.ConsulClient
-	var _ consul.ConsulClient = mockClient
-	
-	// Verify that MockAgent implements consul.ConsulAgent
-	var _ consul.ConsulAgent = mockAgent
-	
+
+	// Verify that MockConsulClient implements consul.Client
+	var _ consul.Client = mockClient
+
+	// Verify that MockAgent implements consul.Agent
+	var _ consul.Agent = mockAgent
+
 	// Test that the mock client works correctly
 	agent := mockClient.Agent()
 	assert.NotNil(t, agent, "Agent() should return non-nil")
-	
+
 	service, _, err := agent.Service("test-service", nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "test-service", service.ID)

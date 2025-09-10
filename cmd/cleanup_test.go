@@ -305,14 +305,14 @@ func TestCleanupCmdSuccessFlow(t *testing.T) {
 
 // MockConsulClient for testing
 type MockConsulClient struct {
-	MockAgent consul.ConsulAgent
+	MockAgent consul.Agent
 }
 
-func (m *MockConsulClient) Agent() consul.ConsulAgent {
+func (m *MockConsulClient) Agent() consul.Agent {
 	return m.MockAgent
 }
 
-// MockAgent implements the ConsulAgent interface
+// MockAgent implements the Agent interface
 type MockAgent struct {
 	ServiceFunc         func(serviceID string, q *api.QueryOptions) (*api.AgentService, *api.QueryMeta, error)
 	ServiceRegisterFunc func(reg *api.AgentServiceRegistration) error
