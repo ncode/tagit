@@ -11,15 +11,16 @@ import (
 	"time"
 
 	"github.com/hashicorp/consul/api"
+	"github.com/ncode/tagit/pkg/consul"
 	"github.com/stretchr/testify/assert"
 )
 
-// MockConsulClient implements the ConsulClient interface for testing.
+// MockConsulClient implements the Client interface for testing.
 type MockConsulClient struct {
 	MockAgent *MockAgent
 }
 
-func (m *MockConsulClient) Agent() ConsulAgent {
+func (m *MockConsulClient) Agent() consul.Agent {
 	return m.MockAgent
 }
 
@@ -596,19 +597,34 @@ func TestRun(t *testing.T) {
 	assert.LessOrEqual(t, updateServiceTagsCalled.Load(), int32(4), "Expected updateServiceTags to be called at most 4 times")
 }
 
-func TestNewConsulAPIWrapper(t *testing.T) {
-	consulClient, err := api.NewClient(api.DefaultConfig())
-	assert.NoError(t, err, "Failed to create Consul client")
+func TestConsulInterfaceCompatibility(t *testing.T) {
+	// Test that our mocks implement the consul package interfaces correctly
+	mockAgent := &MockAgent{
+		ServiceFunc: func(serviceID string, q *api.QueryOptions) (*api.AgentService, *api.QueryMeta, error) {
+			return &api.AgentService{ID: serviceID}, nil, nil
+		},
+		ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
+			return nil
+		},
+	}
 
-	wrapper := NewConsulAPIWrapper(consulClient)
+	mockClient := &MockConsulClient{
+		MockAgent: mockAgent,
+	}
 
-	assert.NotNil(t, wrapper, "NewConsulAPIWrapper returned nil")
+	// Verify that MockConsulClient implements consul.Client
+	var _ consul.Client = mockClient
 
-	_, isConsulClient := interface{}(wrapper).(ConsulClient)
-	assert.True(t, isConsulClient, "NewConsulAPIWrapper does not implement ConsulClient interface")
+	// Verify that MockAgent implements consul.Agent
+	var _ consul.Agent = mockAgent
 
-	_, isConsulAgent := wrapper.Agent().(ConsulAgent)
-	assert.True(t, isConsulAgent, "Wrapper's Agent method does not return a ConsulAgent")
+	// Test that the mock client works correctly
+	agent := mockClient.Agent()
+	assert.NotNil(t, agent, "Agent() should return non-nil")
+
+	service, _, err := agent.Service("test-service", nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "test-service", service.ID)
 }
 
 func TestCmdExecutor_Execute(t *testing.T) {

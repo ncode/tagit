@@ -20,7 +20,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/hashicorp/consul/api"
+	"github.com/ncode/tagit/pkg/consul"
 	"github.com/ncode/tagit/pkg/tagit"
 	"github.com/spf13/cobra"
 )
@@ -34,21 +34,20 @@ var cleanupCmd = &cobra.Command{
 			Level: slog.LevelInfo,
 		}))
 
-		config := api.DefaultConfig()
-		config.Address = cmd.InheritedFlags().Lookup("consul-addr").Value.String()
-		config.Token = cmd.InheritedFlags().Lookup("token").Value.String()
+		consulAddr := cmd.InheritedFlags().Lookup("consul-addr").Value.String()
+		token := cmd.InheritedFlags().Lookup("token").Value.String()
 
-		consulClient, err := api.NewClient(config)
+		consulClient, err := consul.CreateClient(consulAddr, token)
 		if err != nil {
 			logger.Error("Failed to create Consul client", "error", err)
-			return fmt.Errorf("failed to create Consul client: %w", err)
+			return err
 		}
 
 		serviceID := cmd.InheritedFlags().Lookup("service-id").Value.String()
 		tagPrefix := cmd.InheritedFlags().Lookup("tag-prefix").Value.String()
 
 		t := tagit.New(
-			tagit.NewConsulAPIWrapper(consulClient),
+			consulClient,
 			&tagit.CmdExecutor{},
 			serviceID,
 			"", // script is not needed for cleanup

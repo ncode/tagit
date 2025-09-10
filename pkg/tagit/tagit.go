@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/shlex"
 	"github.com/hashicorp/consul/api"
+	"github.com/ncode/tagit/pkg/consul"
 )
 
 // TagIt is the main struct for the tagit flow.
@@ -19,35 +20,9 @@ type TagIt struct {
 	Script          string
 	Interval        time.Duration
 	TagPrefix       string
-	client          ConsulClient
+	client          consul.Client
 	commandExecutor CommandExecutor
 	logger          *slog.Logger
-}
-
-// ConsulClient is an interface for the Consul client.
-type ConsulClient interface {
-	Agent() ConsulAgent
-}
-
-// ConsulAgent is an interface for the Consul agent.
-type ConsulAgent interface {
-	Service(string, *api.QueryOptions) (*api.AgentService, *api.QueryMeta, error)
-	ServiceRegister(*api.AgentServiceRegistration) error
-}
-
-// ConsulAPIWrapper wraps the Consul API client to conform to the ConsulClient interface.
-type ConsulAPIWrapper struct {
-	client *api.Client
-}
-
-// NewConsulAPIWrapper creates a new instance of ConsulAPIWrapper.
-func NewConsulAPIWrapper(client *api.Client) *ConsulAPIWrapper {
-	return &ConsulAPIWrapper{client: client}
-}
-
-// Agent returns an object that conforms to the ConsulAgent interface.
-func (w *ConsulAPIWrapper) Agent() ConsulAgent {
-	return w.client.Agent()
 }
 
 // CommandExecutor is an interface for running commands.
@@ -72,7 +47,7 @@ func (e *CmdExecutor) Execute(command string) ([]byte, error) {
 }
 
 // New creates a new TagIt struct.
-func New(consulClient ConsulClient, commandExecutor CommandExecutor, serviceID string, script string, interval time.Duration, tagPrefix string, logger *slog.Logger) *TagIt {
+func New(consulClient consul.Client, commandExecutor CommandExecutor, serviceID string, script string, interval time.Duration, tagPrefix string, logger *slog.Logger) *TagIt {
 	return &TagIt{
 		ServiceID:       serviceID,
 		Script:          script,
