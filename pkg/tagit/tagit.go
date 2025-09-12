@@ -197,12 +197,25 @@ func (t *TagIt) getService() (*api.AgentService, error) {
 // needsTag checks if the service needs to be tagged. Based on the diff of the current and updated tags, filtering out tags that are already tagged.
 // but we never override the original tags from the consul service registration
 func (t *TagIt) needsTag(current []string, update []string) (updatedTags []string, shouldTag bool) {
-	diff := t.diffTags(current, update)
+	// Extract only the prefixed tags from current for comparison
+	currentPrefixed := make([]string, 0)
+	currentNonPrefixed := make([]string, 0)
+	for _, tag := range current {
+		if strings.HasPrefix(tag, t.TagPrefix+"-") {
+			currentPrefixed = append(currentPrefixed, tag)
+		} else {
+			currentNonPrefixed = append(currentNonPrefixed, tag)
+		}
+	}
+
+	// Compare only the prefixed tags with the update
+	diff := t.diffTags(currentPrefixed, update)
 	if len(diff) == 0 {
 		return nil, false
 	}
-	currentFiltered, _ := t.excludeTagged(current)
-	updatedTags = append(currentFiltered, update...)
+
+	// Combine non-prefixed tags with the new update tags
+	updatedTags = append(currentNonPrefixed, update...)
 	slices.Sort(updatedTags)
 	updatedTags = slices.Compact(updatedTags)
 	return updatedTags, true
