@@ -195,6 +195,13 @@ func TestNeedsTag(t *testing.T) {
 			expectedTags:   []string{"tag2", "tag3", "tag4", "tag5"},
 			expectedShould: true,
 		},
+		{
+			name:           "No Update When Prefixed Tags Unchanged",
+			current:        []string{"tag-tag1", "tag-tag2", "other-tag", "another-tag"},
+			update:         []string{"tag-tag1", "tag-tag2"},
+			expectedTags:   nil,
+			expectedShould: false,
+		},
 	}
 
 	for _, tt := range tests {
