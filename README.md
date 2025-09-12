@@ -1,5 +1,4 @@
-# TagIt
-![Logo](logo.png)
+![TagIt](logo.png)
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/ncode/tagit)](https://goreportcard.com/report/github.com/ncode/tagit)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
