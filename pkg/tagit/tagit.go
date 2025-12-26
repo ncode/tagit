@@ -30,7 +30,12 @@ type CommandExecutor interface {
 	Execute(command string) ([]byte, error)
 }
 
-type CmdExecutor struct{}
+// DefaultScriptTimeout is the default timeout for script execution.
+const DefaultScriptTimeout = 30 * time.Second
+
+type CmdExecutor struct {
+	Timeout time.Duration
+}
 
 func (e *CmdExecutor) Execute(command string) ([]byte, error) {
 	if command == "" {
@@ -43,7 +48,20 @@ func (e *CmdExecutor) Execute(command string) ([]byte, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("failed to execute: no command after splitting")
 	}
-	return exec.Command(args[0], args[1:]...).Output()
+
+	timeout := e.Timeout
+	if timeout == 0 {
+		timeout = DefaultScriptTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, args[0], args[1:]...).Output()
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("script execution timed out after %v", timeout)
+	}
+	return out, err
 }
 
 // New creates a new TagIt struct.
@@ -181,7 +199,6 @@ func (t *TagIt) copyServiceToRegistration(service *api.AgentService) *api.AgentS
 }
 
 // getService returns the registered service.
-// getService returns the registered service.
 func (t *TagIt) getService() (*api.AgentService, error) {
 	agent := t.client.Agent()
 	service, _, err := agent.Service(t.ServiceID, nil)
@@ -219,19 +236,6 @@ func (t *TagIt) needsTag(current []string, update []string) (updatedTags []strin
 	slices.Sort(updatedTags)
 	updatedTags = slices.Compact(updatedTags)
 	return updatedTags, true
-}
-
-// excludeTagged filters out tags that are already tagged with the prefix.
-func (t *TagIt) excludeTagged(tags []string) (filteredTags []string, tagged bool) {
-	filteredTags = make([]string, 0) // Initialize with empty slice instead of nil
-	for _, tag := range tags {
-		if strings.HasPrefix(tag, t.TagPrefix+"-") {
-			tagged = true
-		} else {
-			filteredTags = append(filteredTags, tag)
-		}
-	}
-	return filteredTags, tagged
 }
 
 // diffTags compares two slices of strings and returns the difference.
