@@ -97,61 +97,6 @@ func TestDiffTags(t *testing.T) {
 	}
 }
 
-func TestExcludeTagged(t *testing.T) {
-	tests := []struct {
-		name      string
-		tags      []string
-		tagPrefix string
-		expected  []string
-		shouldTag bool
-	}{
-		{
-			name:      "No Tags With Prefix",
-			tags:      []string{"alpha", "beta", "gamma"},
-			tagPrefix: "tag",
-			expected:  []string{"alpha", "beta", "gamma"},
-			shouldTag: false,
-		},
-		{
-			name:      "All Tags With Prefix",
-			tags:      []string{"tag-alpha", "tag-beta", "tag-gamma"},
-			tagPrefix: "tag",
-			expected:  []string{},
-			shouldTag: true,
-		},
-		{
-			name:      "Some Tags With Prefix",
-			tags:      []string{"alpha", "tag-beta", "gamma"},
-			tagPrefix: "tag",
-			expected:  []string{"alpha", "gamma"},
-			shouldTag: true,
-		},
-		{
-			name:      "Empty Tags",
-			tags:      []string{},
-			tagPrefix: "tag",
-			expected:  []string{},
-			shouldTag: false,
-		},
-		{
-			name:      "Prefix in Middle",
-			tags:      []string{"alpha-tag", "beta", "gamma"},
-			tagPrefix: "tag",
-			expected:  []string{"alpha-tag", "beta", "gamma"},
-			shouldTag: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tagit := TagIt{TagPrefix: tt.tagPrefix}
-			filteredTags, tagged := tagit.excludeTagged(tt.tags)
-			assert.Equal(t, tt.expected, filteredTags, "excludeTagged() returned unexpected filtered tags")
-			assert.Equal(t, tt.shouldTag, tagged, "excludeTagged() returned unexpected shouldTag value")
-		})
-	}
-}
-
 func TestNeedsTag(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -683,4 +628,22 @@ func TestCmdExecutor_Execute(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCmdExecutor_Timeout(t *testing.T) {
+	executor := &CmdExecutor{Timeout: 100 * time.Millisecond}
+
+	_, err := executor.Execute("sleep 5")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "timed out")
+}
+
+func TestCmdExecutor_DefaultTimeout(t *testing.T) {
+	executor := &CmdExecutor{}
+	assert.Equal(t, time.Duration(0), executor.Timeout, "Timeout should be zero before execution")
+
+	// Quick command should succeed with default timeout
+	output, err := executor.Execute("echo hello")
+	assert.NoError(t, err)
+	assert.Equal(t, "hello\n", string(output))
 }

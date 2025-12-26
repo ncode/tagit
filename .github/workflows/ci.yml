@@ -3,7 +3,7 @@ name: Test and coverage
 on: [push, pull_request]
 
 jobs:
-  build:
+  unit-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -12,11 +12,40 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25'
-      - name: Run coverage
-        run:  go test -coverpkg=./... ./... -race -coverprofile=coverage.out -covermode=atomic
+      - name: Run unit tests with coverage
+        run: go test -coverpkg=./... ./... -race -coverprofile=coverage.out -covermode=atomic
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5.5.1
         with:
-          verbose: true 
+          verbose: true
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      consul:
+        image: hashicorp/consul:1.20
+        ports:
+          - 8500:8500
+        options: >-
+          --health-cmd "consul members"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+      - name: Wait for Consul
+        run: |
+          until curl -s http://localhost:8500/v1/status/leader | grep -q .; do
+            echo "Waiting for Consul..."
+            sleep 2
+          done
+          echo "Consul is ready"
+      - name: Run integration tests
+        run: go test -race -tags=integration ./...
+        env:
+          CONSUL_ADDR: 127.0.0.1:8500
