@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       consul:
-        image: hashicorp/consul:1.20
+        image: hashicorp/consul:1.22
         ports:
           - 8500:8500
         options: >-
