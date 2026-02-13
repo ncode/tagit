@@ -81,10 +81,18 @@ example: tagit run -s my-super-service -x '/tmp/tag-role.sh'
 			logger.Error("Failed to get service-id flag", "error", err)
 			return err
 		}
+		if serviceID == "" {
+			logger.Error("Service ID is required")
+			return fmt.Errorf("service-id is required")
+		}
 		script, err := cmd.InheritedFlags().GetString("script")
 		if err != nil {
 			logger.Error("Failed to get script flag", "error", err)
 			return err
+		}
+		if script == "" {
+			logger.Error("Script is required")
+			return fmt.Errorf("script is required")
 		}
 		tagPrefix, err := cmd.InheritedFlags().GetString("tag-prefix")
 		if err != nil {

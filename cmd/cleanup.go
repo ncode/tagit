@@ -44,6 +44,10 @@ var cleanupCmd = &cobra.Command{
 		}
 
 		serviceID := cmd.InheritedFlags().Lookup("service-id").Value.String()
+		if serviceID == "" {
+			logger.Error("Service ID is required")
+			return fmt.Errorf("service-id is required")
+		}
 		tagPrefix := cmd.InheritedFlags().Lookup("tag-prefix").Value.String()
 
 		t := tagit.New(

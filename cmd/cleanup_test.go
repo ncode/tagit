@@ -22,13 +22,7 @@ func TestCleanupCmd(t *testing.T) {
 			name:          "Missing required service-id",
 			args:          []string{"cleanup"},
 			expectError:   true,
-			errorContains: "required flag(s)",
-		},
-		{
-			name:          "Missing required script (even though not used for cleanup)",
-			args:          []string{"cleanup", "--service-id=test-service"},
-			expectError:   true,
-			errorContains: "required flag(s) \"script\" not set",
+			errorContains: "service-id is required",
 		},
 	}
 
@@ -38,9 +32,7 @@ func TestCleanupCmd(t *testing.T) {
 			cmd := &cobra.Command{Use: "tagit"}
 			cmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
 			cmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
-			cmd.MarkPersistentFlagRequired("service-id")
 			cmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
-			cmd.MarkPersistentFlagRequired("script")
 			cmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
 			cmd.PersistentFlags().StringP("interval", "i", "60s", "interval to run the script")
 			cmd.PersistentFlags().StringP("token", "t", "", "consul token")
@@ -63,8 +55,7 @@ func TestCleanupCmd(t *testing.T) {
 			if tt.expectError {
 				assert.Error(t, err)
 				if tt.errorContains != "" {
-					output := buf.String()
-					assert.Contains(t, output, tt.errorContains)
+					assert.Contains(t, err.Error(), tt.errorContains)
 				}
 			} else {
 				assert.NoError(t, err)
@@ -100,7 +91,6 @@ func TestCleanupCmdFlagParsing(t *testing.T) {
 	cmd.SetArgs([]string{
 		"cleanup",
 		"--service-id=test-service",
-		"--script=/tmp/test.sh", // Required by root command
 		"--tag-prefix=test",
 		"--consul-addr=localhost:8500",
 		"--token=test-token",
@@ -179,7 +169,6 @@ func TestCleanupCmdExecution(t *testing.T) {
 			cmd.SetArgs([]string{
 				"cleanup",
 				"--service-id=test-service",
-				"--script=/tmp/test.sh",
 				"--consul-addr=" + tt.consulAddr,
 				"--tag-prefix=test",
 			})
@@ -229,7 +218,6 @@ func TestCleanupCmdFlagRetrieval(t *testing.T) {
 	cmd.SetArgs([]string{
 		"cleanup",
 		"--service-id=test-service",
-		"--script=/tmp/test.sh",
 		"--consul-addr=localhost:9500",
 		"--tag-prefix=test-prefix",
 		"--token=test-token",
@@ -285,7 +273,6 @@ func TestCleanupCmdSuccessFlow(t *testing.T) {
 	cmd.SetArgs([]string{
 		"cleanup",
 		"--service-id=test-service",
-		"--script=/tmp/test.sh",
 		"--consul-addr=localhost:8500",
 		"--tag-prefix=test",
 		"--token=secret-token",
