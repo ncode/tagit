@@ -30,13 +30,13 @@ func TestRunCmd(t *testing.T) {
 			name:          "Missing required service-id",
 			args:          []string{"run", "--script=/tmp/test.sh"},
 			expectError:   true,
-			errorContains: "required flag(s) \"service-id\" not set",
+			errorContains: "service-id is required",
 		},
 		{
 			name:          "Missing required script",
 			args:          []string{"run", "--service-id=test-service"},
 			expectError:   true,
-			errorContains: "required flag(s) \"script\" not set",
+			errorContains: "script is required",
 		},
 		{
 			name:          "Invalid interval format",
@@ -64,9 +64,7 @@ func TestRunCmd(t *testing.T) {
 			cmd := &cobra.Command{Use: "tagit"}
 			cmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
 			cmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
-			cmd.MarkPersistentFlagRequired("service-id")
 			cmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
-			cmd.MarkPersistentFlagRequired("script")
 			cmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
 			cmd.PersistentFlags().StringP("interval", "i", "60s", "interval to run the script")
 			cmd.PersistentFlags().StringP("token", "t", "", "consul token")
@@ -98,8 +96,7 @@ func TestRunCmd(t *testing.T) {
 				if tt.expectError {
 					assert.Error(t, err)
 					if tt.errorContains != "" {
-						output := buf.String()
-						assert.Contains(t, output, tt.errorContains)
+						assert.Contains(t, err.Error(), tt.errorContains)
 					}
 				} else {
 					assert.NoError(t, err)
