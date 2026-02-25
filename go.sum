@@ -59,6 +59,8 @@ github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 h1:El6M4kTTCOh6aBiKaU
 github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510/go.mod h1:pupxD2MaaD3pAXIBCelhxNneeOaAeabZDe5s4K6zSpQ=
 github.com/hashicorp/consul/api v1.33.2 h1:Q6mE0WZsUTJerlnl9TuXzqrtZ0cKdOCsxcZhj5mKbMs=
 github.com/hashicorp/consul/api v1.33.2/go.mod h1:K3yoL/vnIBcQV/25NeMZVokRvPPERiqp2Udtr4xAfhs=
+github.com/hashicorp/consul/api v1.33.4 h1:AJkZp6qzgAYcMIU0+CjJ0Rb7+byfh0dazFK/gzlOcJk=
+github.com/hashicorp/consul/api v1.33.4/go.mod h1:BkH3WEUzsnWvJJaHoDqKqoe2Q2EIixx7Gjj6MTwYnOA=
 github.com/hashicorp/consul/sdk v0.17.1 h1:LumAh8larSXmXw2wvw/lK5ZALkJ2wK8VRwWMLVV5M5c=
 github.com/hashicorp/consul/sdk v0.17.1/go.mod h1:EngiixMhmw9T7wApycq6rDRFXXVUwjjf7HuLiGMH/Sw=
 github.com/hashicorp/errwrap v1.0.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=
