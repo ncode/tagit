@@ -17,9 +17,10 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"os"
 )
 
 var cfgFile string
@@ -66,7 +67,7 @@ func initConfig() {
 		viper.SetConfigName(".tagit")
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
+	configureCommandIntakeEnv()
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {

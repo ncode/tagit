@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/google/shlex"
@@ -21,6 +19,7 @@ type TagIt struct {
 	Interval        time.Duration
 	TagPrefix       string
 	client          consul.Client
+	registration    *consul.ServiceRegistration
 	commandExecutor CommandExecutor
 	logger          *slog.Logger
 }
@@ -72,6 +71,7 @@ func New(consulClient consul.Client, commandExecutor CommandExecutor, serviceID 
 		Interval:        interval,
 		TagPrefix:       tagPrefix,
 		client:          consulClient,
+		registration:    consul.NewServiceRegistration(consulClient),
 		commandExecutor: commandExecutor,
 		logger:          logger,
 	}
@@ -79,21 +79,16 @@ func New(consulClient consul.Client, commandExecutor CommandExecutor, serviceID 
 
 // Run will run the tagit flow and tag consul services based on the script output
 func (t *TagIt) Run(ctx context.Context) {
-	ticker := time.NewTicker(t.Interval)
-	defer ticker.Stop()
+	Scheduler{
+		Interval: t.Interval,
+		RunOnce:  t.ReconcileOnce,
+		Logger:   t.logger,
+	}.Run(ctx)
+}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := t.updateServiceTags(); err != nil {
-				t.logger.Error("error updating service tags",
-					"service", t.ServiceID,
-					"error", err)
-			}
-		}
-	}
+// ReconcileOnce runs one deterministic service tag reconciliation pass.
+func (t *TagIt) ReconcileOnce() error {
+	return t.updateServiceTags()
 }
 
 // CleanupTags removes all tags with the given prefix from the service.
@@ -103,16 +98,8 @@ func (t *TagIt) CleanupTags() error {
 		return fmt.Errorf("error getting service: %w", err)
 	}
 
-	// Filter out tags with the specified prefix
-	cleanedTags := make([]string, 0)
-	for _, tag := range service.Tags {
-		if !strings.HasPrefix(tag, t.TagPrefix+"-") {
-			cleanedTags = append(cleanedTags, tag)
-		}
-	}
-
-	// Update the service with the cleaned tags
-	if err := t.updateConsulService(service, cleanedTags); err != nil {
+	reconciliation := NewReconciler(t.TagPrefix).Cleanup(service.Tags)
+	if err := t.registrationStore().UpdateTags(service, reconciliation.Tags, reconciliation.Changed); err != nil {
 		return fmt.Errorf("error cleaning up tags: %w", err)
 	}
 
@@ -134,12 +121,13 @@ func (t *TagIt) updateServiceTags() error {
 		return fmt.Errorf("error getting service: %w", err)
 	}
 
-	newTags, err := t.generateNewTags()
+	out, err := t.runScript()
 	if err != nil {
-		return fmt.Errorf("error generating new tags: %w", err)
+		return fmt.Errorf("error running script: %w", err)
 	}
 
-	if err := t.updateConsulService(service, newTags); err != nil {
+	reconciliation := NewReconciler(t.TagPrefix).Reconcile(service.Tags, out)
+	if err := t.registrationStore().UpdateTags(service, reconciliation.Tags, reconciliation.Changed); err != nil {
 		return fmt.Errorf("error updating service in Consul: %w", err)
 	}
 
@@ -157,27 +145,18 @@ func (t *TagIt) generateNewTags() ([]string, error) {
 
 // updateConsulService updates the service in Consul with the new tags.
 func (t *TagIt) updateConsulService(service *api.AgentService, newTags []string) error {
-	registration := t.copyServiceToRegistration(service)
-	updatedTags, shouldTag := t.needsTag(registration.Tags, newTags)
-	if shouldTag {
-		registration.Tags = updatedTags
-		if err := t.client.Agent().ServiceRegister(registration); err != nil {
-			return fmt.Errorf("error registering service: %w", err)
-		}
-		t.logger.Info("updated service tags",
-			"service", t.ServiceID,
-			"tags", updatedTags)
+	if err := t.registrationStore().UpdateTags(service, newTags, true); err != nil {
+		return err
 	}
+	t.logger.Info("updated service tags",
+		"service", t.ServiceID,
+		"tags", newTags)
 	return nil
 }
 
 // parseScriptOutput parses the script output and generates tags.
 func (t *TagIt) parseScriptOutput(output []byte) []string {
-	var tags []string
-	for _, tag := range strings.Fields(string(output)) {
-		tags = append(tags, fmt.Sprintf("%s-%s", t.TagPrefix, tag))
-	}
-	return tags
+	return NewReconciler(t.TagPrefix).Reconcile(nil, output).Tags
 }
 
 // copyServiceToRegistration copies *api.AgentService to *api.AgentServiceRegistration
@@ -200,42 +179,24 @@ func (t *TagIt) copyServiceToRegistration(service *api.AgentService) *api.AgentS
 
 // getService returns the registered service.
 func (t *TagIt) getService() (*api.AgentService, error) {
-	agent := t.client.Agent()
-	service, _, err := agent.Service(t.ServiceID, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error getting service %s: %w", t.ServiceID, err)
+	return t.registrationStore().Load(t.ServiceID)
+}
+
+func (t *TagIt) registrationStore() *consul.ServiceRegistration {
+	if t.registration != nil {
+		return t.registration
 	}
-	if service == nil {
-		return nil, fmt.Errorf("service %s not found", t.ServiceID)
-	}
-	return service, nil
+	return consul.NewServiceRegistration(t.client)
 }
 
 // needsTag checks if the service needs to be tagged. Based on the diff of the current and updated tags, filtering out tags that are already tagged.
 // but we never override the original tags from the consul service registration
 func (t *TagIt) needsTag(current []string, update []string) (updatedTags []string, shouldTag bool) {
-	// Extract only the prefixed tags from current for comparison
-	currentPrefixed := make([]string, 0)
-	currentNonPrefixed := make([]string, 0)
-	for _, tag := range current {
-		if strings.HasPrefix(tag, t.TagPrefix+"-") {
-			currentPrefixed = append(currentPrefixed, tag)
-		} else {
-			currentNonPrefixed = append(currentNonPrefixed, tag)
-		}
-	}
-
-	// Compare only the prefixed tags with the update
-	diff := t.diffTags(currentPrefixed, update)
-	if len(diff) == 0 {
+	reconciliation := NewReconciler(t.TagPrefix).ReconcileManaged(current, update)
+	if !reconciliation.Changed {
 		return nil, false
 	}
-
-	// Combine non-prefixed tags with the new update tags
-	updatedTags = append(currentNonPrefixed, update...)
-	slices.Sort(updatedTags)
-	updatedTags = slices.Compact(updatedTags)
-	return updatedTags, true
+	return reconciliation.Tags, true
 }
 
 // diffTags compares two slices of strings and returns the difference.

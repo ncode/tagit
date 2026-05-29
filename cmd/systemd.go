@@ -17,10 +17,10 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/ncode/tagit/pkg/systemd"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // systemdCmd represents the systemd command
@@ -34,40 +34,15 @@ automatically on boot and can be managed using systemctl.
 Example usage:
   tagit systemd --service-id=my-service --script=/path/to/script.sh --tag-prefix=tagit --interval=5s --user=tagit --group=tagit
 `,
-	Run: func(cmd *cobra.Command, args []string) {
-		flags := make(map[string]string)
-		for _, flag := range append(systemd.GetRequiredFlags(), systemd.GetOptionalFlags()...) {
-			flags[flag], _ = cmd.Flags().GetString(flag)
-		}
-
-		fields, err := systemd.NewFieldsFromFlags(flags)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-
-		serviceFile, err := systemd.RenderTemplate(fields)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating systemd service file: %v\n", err)
-			os.Exit(1)
-		}
-
-		fmt.Println(serviceFile)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return systemdCommand(cmd)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(systemdCmd)
 
-	// Define flags for all required and optional fields
-	systemdCmd.Flags().String("service-id", "", "ID of the service (required)")
-	systemdCmd.Flags().String("script", "", "Path to the script to execute (required)")
-	systemdCmd.Flags().String("tag-prefix", "", "Prefix for tags (required)")
-	systemdCmd.Flags().String("interval", "", "Interval for script execution (required)")
-	systemdCmd.Flags().String("token", "", "Consul token (optional)")
-	systemdCmd.Flags().String("consul-addr", "", "Consul address (optional)")
-	systemdCmd.Flags().String("user", "", "User to run the service as (required)")
-	systemdCmd.Flags().String("group", "", "Group to run the service as (required)")
+	addSystemdFlags(systemdCmd.Flags())
 
 	// Mark required flags
 	systemdCmd.MarkFlagRequired("service-id")
@@ -76,4 +51,35 @@ func init() {
 	systemdCmd.MarkFlagRequired("interval")
 	systemdCmd.MarkFlagRequired("user")
 	systemdCmd.MarkFlagRequired("group")
+}
+
+func systemdCommand(cmd *cobra.Command) error {
+	input, err := resolveSystemdInput(cmd)
+	if err != nil {
+		return err
+	}
+
+	fields, err := systemd.NewFieldsFromInvocation(input.Invocation, input.User, input.Group)
+	if err != nil {
+		return err
+	}
+
+	serviceFile, err := systemd.RenderTemplate(fields)
+	if err != nil {
+		return fmt.Errorf("generate systemd service file: %w", err)
+	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), serviceFile)
+	return nil
+}
+
+func addSystemdFlags(flags *pflag.FlagSet) {
+	flags.String("service-id", "", "ID of the service (required)")
+	flags.String("script", "", "Path to the script to execute (required)")
+	flags.String("tag-prefix", "", "Prefix for tags (required)")
+	flags.String("interval", "", "Interval for script execution (required)")
+	flags.String("token", "", "Consul token (optional)")
+	flags.String("consul-addr", "", "Consul address (optional)")
+	flags.String("user", "", "User to run the service as (required)")
+	flags.String("group", "", "Group to run the service as (required)")
 }

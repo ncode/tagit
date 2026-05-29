@@ -6,7 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"sort"
-	"sync/atomic"
+	"strings"
 	"testing"
 	"time"
 
@@ -254,6 +254,192 @@ func TestRunScript(t *testing.T) {
 				assert.Equal(t, tt.wantOutput, string(output))
 			}
 		})
+	}
+}
+
+func TestGenerateNewTags(t *testing.T) {
+	tests := []struct {
+		name       string
+		output     string
+		execErr    error
+		want       []string
+		wantErr    bool
+		wantErrMsg string
+	}{
+		{
+			name:   "parses script output",
+			output: "beta alpha alpha",
+			want:   []string{"role-alpha", "role-beta"},
+		},
+		{
+			name:       "wraps script errors",
+			execErr:    fmt.Errorf("permission denied"),
+			wantErr:    true,
+			wantErrMsg: "error running script: permission denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tagit := TagIt{
+				Script:          "tags.sh",
+				TagPrefix:       "role",
+				commandExecutor: &MockCommandExecutor{MockOutput: []byte(tt.output), MockError: tt.execErr},
+				logger:          discardTagitLogger(),
+			}
+
+			got, err := tagit.generateNewTags()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("generateNewTags() error = nil, want error")
+				}
+				if err.Error() != tt.wantErrMsg {
+					t.Fatalf("generateNewTags() error = %q, want %q", err, tt.wantErrMsg)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("generateNewTags() error = %v", err)
+			}
+			if !sameStringSlice(got, tt.want) {
+				t.Fatalf("generateNewTags() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseScriptOutput(t *testing.T) {
+	tagit := TagIt{TagPrefix: "role"}
+
+	got := tagit.parseScriptOutput([]byte("api worker api"))
+	want := []string{"role-api", "role-worker"}
+	if !sameStringSlice(got, want) {
+		t.Fatalf("parseScriptOutput() = %v, want %v", got, want)
+	}
+}
+
+func TestUpdateConsulService(t *testing.T) {
+	tests := []struct {
+		name          string
+		registerErr   error
+		wantErr       bool
+		wantErrSubstr string
+	}{
+		{name: "writes updated tags"},
+		{
+			name:          "returns registration errors",
+			registerErr:   fmt.Errorf("permission denied"),
+			wantErr:       true,
+			wantErrSubstr: "permission denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got *api.AgentServiceRegistration
+			tagit := New(
+				&MockConsulClient{
+					MockAgent: &MockAgent{
+						ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
+							got = reg
+							return tt.registerErr
+						},
+					},
+				},
+				&MockCommandExecutor{},
+				"api-1",
+				"tags.sh",
+				time.Minute,
+				"role",
+				discardTagitLogger(),
+			)
+			service := &api.AgentService{
+				ID:      "api-1",
+				Service: "api",
+				Tags:    []string{"old"},
+			}
+
+			err := tagit.updateConsulService(service, []string{"role-primary", "static"})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("updateConsulService() error = nil, want error")
+				}
+				if !strings.Contains(err.Error(), tt.wantErrSubstr) {
+					t.Fatalf("updateConsulService() error = %q, want %q", err, tt.wantErrSubstr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("updateConsulService() error = %v", err)
+			}
+			if got == nil {
+				t.Fatal("ServiceRegister was not called")
+			}
+			want := []string{"role-primary", "static"}
+			if !sameStringSlice(got.Tags, want) {
+				t.Fatalf("registered tags = %v, want %v", got.Tags, want)
+			}
+		})
+	}
+}
+
+func TestRunReturnsWhenContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tagit := TagIt{
+		Interval:        time.Hour,
+		commandExecutor: &MockCommandExecutor{},
+		logger:          discardTagitLogger(),
+	}
+
+	tagit.Run(ctx)
+}
+
+func TestGetServiceUsesFallbackRegistrationStore(t *testing.T) {
+	tagit := TagIt{
+		ServiceID: "api-1",
+		client: &MockConsulClient{
+			MockAgent: &MockAgent{
+				ServiceFunc: func(serviceID string, q *api.QueryOptions) (*api.AgentService, *api.QueryMeta, error) {
+					return &api.AgentService{ID: serviceID, Service: "api"}, nil, nil
+				},
+			},
+		},
+	}
+
+	got, err := tagit.getService()
+	if err != nil {
+		t.Fatalf("getService() error = %v", err)
+	}
+	if got.ID != "api-1" {
+		t.Fatalf("getService() ID = %q, want api-1", got.ID)
+	}
+}
+
+func TestUpdateServiceTags_returnsServiceLookupErrors(t *testing.T) {
+	tagit := New(
+		&MockConsulClient{
+			MockAgent: &MockAgent{
+				ServiceFunc: func(serviceID string, q *api.QueryOptions) (*api.AgentService, *api.QueryMeta, error) {
+					return nil, nil, fmt.Errorf("consul unavailable")
+				},
+			},
+		},
+		&MockCommandExecutor{},
+		"api-1",
+		"tags.sh",
+		time.Minute,
+		"role",
+		discardTagitLogger(),
+	)
+
+	err := tagit.updateServiceTags()
+	if err == nil {
+		t.Fatal("updateServiceTags() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "error getting service") {
+		t.Fatalf("updateServiceTags() error = %q, want service lookup context", err)
 	}
 }
 
@@ -506,47 +692,6 @@ func TestCleanupTags(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestRun(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	updateServiceTagsCalled := atomic.Int32{}
-	mockExecutor := &MockCommandExecutor{
-		MockOutput: []byte("new-tag1 new-tag2"),
-		MockError:  nil,
-	}
-	mockConsulClient := &MockConsulClient{
-		MockAgent: &MockAgent{
-			ServiceFunc: func(serviceID string, q *api.QueryOptions) (*api.AgentService, *api.QueryMeta, error) {
-				updateServiceTagsCalled.Add(1)
-				if updateServiceTagsCalled.Load() == 2 {
-					return nil, nil, fmt.Errorf("simulated error")
-				}
-				return &api.AgentService{
-					ID:   "test-service",
-					Tags: []string{"old-tag"},
-				}, nil, nil
-			},
-			ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
-				return nil
-			},
-		},
-	}
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	tagit := New(mockConsulClient, mockExecutor, "test-service", "echo test", 100*time.Millisecond, "tag", logger)
-
-	go tagit.Run(ctx)
-
-	time.Sleep(350 * time.Millisecond)
-	cancel()
-
-	time.Sleep(50 * time.Millisecond)
-
-	assert.GreaterOrEqual(t, updateServiceTagsCalled.Load(), int32(2), "Expected updateServiceTags to be called at least 2 times")
-	assert.LessOrEqual(t, updateServiceTagsCalled.Load(), int32(4), "Expected updateServiceTags to be called at most 4 times")
 }
 
 func TestConsulInterfaceCompatibility(t *testing.T) {

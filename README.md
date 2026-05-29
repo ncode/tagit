@@ -110,7 +110,7 @@ TagIt supports configuration through:
 
 - **CLI flags** (`--consul-addr`, `--service-id`, `--script`, `--tag-prefix`, `--interval`, `--token`)
 - **Config file** with `--config` (default: `$HOME/.tagit.yaml`)
-- **Environment variables** (Viper automatic binding)
+- **Environment variables** using `TAGIT_*` names
 
 Example `~/.tagit.yaml`:
 
@@ -123,7 +123,9 @@ interval: "5s"
 token: "your-consul-token"
 ```
 
-Note: `run` and `cleanup` use inherited root flags, while `systemd` defines and validates its own flags.
+Configuration precedence is: CLI flags, `TAGIT_*` environment variables, config file values, then CLI flag defaults.
+Environment variable names replace `-` with `_`: `TAGIT_CONSUL_ADDR`, `TAGIT_SERVICE_ID`, `TAGIT_SCRIPT`, `TAGIT_TAG_PREFIX`, `TAGIT_INTERVAL`, and `TAGIT_TOKEN`.
+The `run`, `cleanup`, and `systemd` commands resolve shared TagIt invocation values through the same validation path; `systemd` also requires `--user` and `--group`.
 
 ## Examples
 

@@ -1,679 +1,258 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os"
-	"sync/atomic"
+	"io"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/consul/api"
 	"github.com/ncode/tagit/pkg/consul"
-	"github.com/spf13/cobra"
-	"github.com/stretchr/testify/assert"
+	"github.com/ncode/tagit/pkg/tagit"
 )
 
-func TestRunCmd(t *testing.T) {
-	// Save original args and restore after test
-	originalArgs := os.Args
-	defer func() { os.Args = originalArgs }()
+func TestRunCommand_validatesInputBeforeCreatingClient(t *testing.T) {
+	resetViper(t)
+	cmd := newIntakeTestCommand(t, "run", withSharedPersistentFlags)
+	setFlag(t, cmd.InheritedFlags(), "service-id", "api")
+	setFlag(t, cmd.InheritedFlags(), "interval", "15s")
 
-	tests := []struct {
-		name          string
-		args          []string
-		expectError   bool
-		errorContains string
-	}{
-		{
-			name:          "Missing required service-id",
-			args:          []string{"run", "--script=/tmp/test.sh"},
-			expectError:   true,
-			errorContains: "service-id is required",
+	clientCalls := 0
+	deps := commandDeps{
+		Logger: discardLogger(),
+		NewClient: func(address, token string) (consul.Client, error) {
+			clientCalls++
+			return commandClient{}, nil
 		},
-		{
-			name:          "Missing required script",
-			args:          []string{"run", "--service-id=test-service"},
-			expectError:   true,
-			errorContains: "script is required",
-		},
-		{
-			name:          "Invalid interval format",
-			args:          []string{"run", "--service-id=test-service", "--script=/tmp/test.sh", "--interval=invalid"},
-			expectError:   true,
-			errorContains: "invalid interval",
-		},
-		{
-			name:          "Empty interval",
-			args:          []string{"run", "--service-id=test-service", "--script=/tmp/test.sh", "--interval="},
-			expectError:   true,
-			errorContains: "interval is required and cannot be empty or zero",
-		},
-		{
-			name:          "Zero interval",
-			args:          []string{"run", "--service-id=test-service", "--script=/tmp/test.sh", "--interval=0"},
-			expectError:   true,
-			errorContains: "interval is required and cannot be empty or zero",
+		NewTagger: func(consul.Client, tagit.CommandExecutor, commandInput, *slog.Logger) tagger {
+			t.Fatal("NewTagger called before validation")
+			return nil
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create a new root command for each test
-			cmd := &cobra.Command{Use: "tagit"}
-			cmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
-			cmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
-			cmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
-			cmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
-			cmd.PersistentFlags().StringP("interval", "i", "60s", "interval to run the script")
-			cmd.PersistentFlags().StringP("token", "t", "", "consul token")
-
-			// Add the run command
-			testRunCmd := &cobra.Command{
-				Use:   "run",
-				Short: "Run tagit",
-				RunE:  runCmd.RunE,
-			}
-			cmd.AddCommand(testRunCmd)
-
-			// Capture stderr
-			var buf bytes.Buffer
-			cmd.SetErr(&buf)
-			cmd.SetArgs(tt.args)
-
-			// Set a context with timeout to prevent hanging
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-
-			done := make(chan error, 1)
-			go func() {
-				done <- cmd.Execute()
-			}()
-
-			select {
-			case err := <-done:
-				if tt.expectError {
-					assert.Error(t, err)
-					if tt.errorContains != "" {
-						assert.Contains(t, err.Error(), tt.errorContains)
-					}
-				} else {
-					assert.NoError(t, err)
-				}
-			case <-ctx.Done():
-				if tt.expectError {
-					t.Log("Command timed out as expected for invalid input")
-				} else {
-					t.Error("Command timed out unexpectedly")
-				}
-			}
-		})
+	err := runCommandWithContext(t.Context(), cmd, deps)
+	if err == nil {
+		t.Fatal("runCommandWithContext() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "script is required") {
+		t.Fatalf("runCommandWithContext() error = %q, want script validation", err)
+	}
+	if clientCalls != 0 {
+		t.Fatalf("NewClient calls = %d, want 0", clientCalls)
 	}
 }
 
-func TestRunCmdFlagParsing(t *testing.T) {
-	var capturedFlags map[string]string
+func TestRunCommand_usesResolvedInput(t *testing.T) {
+	resetViper(t)
+	cmd := newIntakeTestCommand(t, "run", withSharedPersistentFlags)
+	setFlag(t, cmd.InheritedFlags(), "consul-addr", "consul.example:8500")
+	setFlag(t, cmd.InheritedFlags(), "service-id", "api")
+	setFlag(t, cmd.InheritedFlags(), "script", "echo primary")
+	setFlag(t, cmd.InheritedFlags(), "tag-prefix", "role")
+	setFlag(t, cmd.InheritedFlags(), "interval", "15s")
+	setFlag(t, cmd.InheritedFlags(), "token", "secret")
 
-	cmd := &cobra.Command{Use: "tagit"}
-	cmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
-	cmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
-	cmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
-	cmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
-	cmd.PersistentFlags().StringP("interval", "i", "60s", "interval to run the script")
-	cmd.PersistentFlags().StringP("token", "t", "", "consul token")
-
-	testRunCmd := &cobra.Command{
-		Use:   "run",
-		Short: "Run tagit",
-		Run: func(cmd *cobra.Command, args []string) {
-			// Capture flag values during execution
-			capturedFlags = make(map[string]string)
-			capturedFlags["service-id"], _ = cmd.InheritedFlags().GetString("service-id")
-			capturedFlags["script"], _ = cmd.InheritedFlags().GetString("script")
-			capturedFlags["interval"], _ = cmd.InheritedFlags().GetString("interval")
-			capturedFlags["tag-prefix"], _ = cmd.InheritedFlags().GetString("tag-prefix")
-			capturedFlags["consul-addr"], _ = cmd.InheritedFlags().GetString("consul-addr")
-			capturedFlags["token"], _ = cmd.InheritedFlags().GetString("token")
+	var gotAddress string
+	var gotToken string
+	var gotInput commandInput
+	fakeTagger := &commandTagger{}
+	deps := commandDeps{
+		Logger: discardLogger(),
+		NewClient: func(address, token string) (consul.Client, error) {
+			gotAddress = address
+			gotToken = token
+			return commandClient{}, nil
+		},
+		NewExecutor: func() tagit.CommandExecutor {
+			return &tagit.CmdExecutor{}
+		},
+		NewTagger: func(client consul.Client, executor tagit.CommandExecutor, input commandInput, logger *slog.Logger) tagger {
+			if client == nil {
+				t.Fatal("client = nil")
+			}
+			if executor == nil {
+				t.Fatal("executor = nil")
+			}
+			if logger == nil {
+				t.Fatal("logger = nil")
+			}
+			gotInput = input
+			return fakeTagger
 		},
 	}
-	cmd.AddCommand(testRunCmd)
 
-	cmd.SetArgs([]string{
-		"run",
-		"--service-id=test-service",
-		"--script=/tmp/test.sh",
-		"--interval=30s",
-		"--tag-prefix=test",
-		"--consul-addr=localhost:8500",
-		"--token=test-token",
-	})
+	if err := runCommandWithContext(t.Context(), cmd, deps); err != nil {
+		t.Fatalf("runCommandWithContext() error = %v", err)
+	}
 
-	err := cmd.Execute()
-	assert.NoError(t, err)
-
-	// Verify flags were parsed correctly
-	assert.Equal(t, "test-service", capturedFlags["service-id"])
-	assert.Equal(t, "/tmp/test.sh", capturedFlags["script"])
-	assert.Equal(t, "30s", capturedFlags["interval"])
-	assert.Equal(t, "test", capturedFlags["tag-prefix"])
-	assert.Equal(t, "localhost:8500", capturedFlags["consul-addr"])
-	assert.Equal(t, "test-token", capturedFlags["token"])
+	if gotAddress != "consul.example:8500" {
+		t.Fatalf("address = %q, want consul.example:8500", gotAddress)
+	}
+	if gotToken != "secret" {
+		t.Fatalf("token = %q, want secret", gotToken)
+	}
+	wantInput := commandInput{
+		ConsulAddr:  "consul.example:8500",
+		ServiceID:   "api",
+		Script:      "echo primary",
+		TagPrefix:   "role",
+		Interval:    15 * time.Second,
+		IntervalRaw: "15s",
+		Token:       "secret",
+	}
+	if gotInput != wantInput {
+		t.Fatalf("input = %#v, want %#v", gotInput, wantInput)
+	}
+	if fakeTagger.runCalls != 1 {
+		t.Fatalf("Run calls = %d, want 1", fakeTagger.runCalls)
+	}
 }
 
-func TestRunCmdExecutionErrors(t *testing.T) {
-	tests := []struct {
-		name          string
-		consulAddr    string
-		expectError   bool
-		errorContains string
-	}{
-		{
-			name:          "Invalid consul address",
-			consulAddr:    "invalid-consul-address",
-			expectError:   true,
-			errorContains: "failed to create Consul client",
+func TestRunCommand_returnsClientErrors(t *testing.T) {
+	resetViper(t)
+	cmd := newIntakeTestCommand(t, "run", withSharedPersistentFlags)
+	setFlag(t, cmd.InheritedFlags(), "service-id", "api")
+	setFlag(t, cmd.InheritedFlags(), "script", "echo primary")
+	setFlag(t, cmd.InheritedFlags(), "interval", "15s")
+
+	deps := commandDeps{
+		Logger: discardLogger(),
+		NewClient: func(address, token string) (consul.Client, error) {
+			return nil, fmt.Errorf("connect consul")
+		},
+		NewTagger: func(consul.Client, tagit.CommandExecutor, commandInput, *slog.Logger) tagger {
+			t.Fatal("NewTagger called after client error")
+			return nil
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cmd := &cobra.Command{Use: "tagit"}
-			cmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
-			cmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
-			cmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
-			cmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
-			cmd.PersistentFlags().StringP("interval", "i", "60s", "interval to run the script")
-			cmd.PersistentFlags().StringP("token", "t", "", "consul token")
+	err := runCommandWithContext(t.Context(), cmd, deps)
+	if err == nil {
+		t.Fatal("runCommandWithContext() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "connect consul") {
+		t.Fatalf("runCommandWithContext() error = %q, want client error", err)
+	}
+}
 
-			testRunCmd := &cobra.Command{
-				Use:   "run",
-				Short: "Run tagit",
-				RunE: func(cmd *cobra.Command, args []string) error {
-					// Test the same initial setup as the real run command but stop before running
-					interval, err := cmd.InheritedFlags().GetString("interval")
-					if err != nil {
-						return err
-					}
+func TestRunCommand_passesCancellationToTagger(t *testing.T) {
+	resetViper(t)
+	cmd := newIntakeTestCommand(t, "run", withSharedPersistentFlags)
+	setFlag(t, cmd.InheritedFlags(), "service-id", "api")
+	setFlag(t, cmd.InheritedFlags(), "script", "echo primary")
+	setFlag(t, cmd.InheritedFlags(), "interval", "15s")
 
-					if interval == "" || interval == "0" {
-						return fmt.Errorf("interval is required and cannot be empty or zero")
-					}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
-					_, err = time.ParseDuration(interval)
-					if err != nil {
-						return fmt.Errorf("invalid interval %q: %w", interval, err)
-					}
-
-					consulAddr, err := cmd.InheritedFlags().GetString("consul-addr")
-					if err != nil {
-						return err
-					}
-
-					// Test consul client creation with invalid address
-					if consulAddr == "invalid-consul-address" {
-						return fmt.Errorf("failed to create Consul client: invalid address")
-					}
-
-					// Don't actually start the service - just return success for valid inputs
-					return nil
-				},
-			}
-			cmd.AddCommand(testRunCmd)
-
-			var stderr bytes.Buffer
-			cmd.SetErr(&stderr)
-			cmd.SetArgs([]string{
-				"run",
-				"--service-id=test-service",
-				"--script=/tmp/test.sh",
-				"--consul-addr=" + tt.consulAddr,
-				"--tag-prefix=test",
-				"--interval=30s",
+	observedCancellation := false
+	deps := commandDeps{
+		Logger: discardLogger(),
+		NewClient: func(address, token string) (consul.Client, error) {
+			return commandClient{}, nil
+		},
+		NewTagger: func(consul.Client, tagit.CommandExecutor, commandInput, *slog.Logger) tagger {
+			return runFuncTagger(func(ctx context.Context) {
+				select {
+				case <-ctx.Done():
+					observedCancellation = true
+				default:
+				}
 			})
-
-			err := cmd.Execute()
-
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestRunCmdFlagRetrievalErrors(t *testing.T) {
-	// Test flag retrieval error paths in the RunE function
-	tests := []struct {
-		name          string
-		interval      string
-		expectError   bool
-		errorContains string
-	}{
-		{
-			name:        "GetString error simulation for interval",
-			interval:    "30s", // This won't actually cause GetString to error in this test setup
-			expectError: false,
-		},
-		{
-			name:        "Valid duration parsing",
-			interval:    "1m30s",
-			expectError: false,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cmd := &cobra.Command{Use: "tagit"}
-			cmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
-			cmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
-			cmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
-			cmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
-			cmd.PersistentFlags().StringP("interval", "i", "60s", "interval to run the script")
-			cmd.PersistentFlags().StringP("token", "t", "", "consul token")
-
-			var capturedData map[string]interface{}
-
-			testRunCmd := &cobra.Command{
-				Use:   "run",
-				Short: "Run tagit",
-				RunE: func(cmd *cobra.Command, args []string) error {
-					capturedData = make(map[string]interface{})
-
-					// Test the same flag retrieval pattern as in the actual run command
-					interval, err := cmd.InheritedFlags().GetString("interval")
-					if err != nil {
-						return err
-					}
-					capturedData["interval-string"] = interval
-
-					if interval == "" || interval == "0" {
-						return fmt.Errorf("interval is required and cannot be empty or zero")
-					}
-
-					validInterval, err := time.ParseDuration(interval)
-					if err != nil {
-						return fmt.Errorf("invalid interval %q: %w", interval, err)
-					}
-					capturedData["parsed-interval"] = validInterval
-
-					// Test other flag retrievals
-					config := make(map[string]string)
-					config["address"], err = cmd.InheritedFlags().GetString("consul-addr")
-					if err != nil {
-						return err
-					}
-					config["token"], err = cmd.InheritedFlags().GetString("token")
-					if err != nil {
-						return err
-					}
-					capturedData["config"] = config
-
-					serviceID, err := cmd.InheritedFlags().GetString("service-id")
-					if err != nil {
-						return err
-					}
-					script, err := cmd.InheritedFlags().GetString("script")
-					if err != nil {
-						return err
-					}
-					tagPrefix, err := cmd.InheritedFlags().GetString("tag-prefix")
-					if err != nil {
-						return err
-					}
-
-					capturedData["service-id"] = serviceID
-					capturedData["script"] = script
-					capturedData["tag-prefix"] = tagPrefix
-
-					// Don't actually run anything - just test flag access
-					return nil
-				},
-			}
-			cmd.AddCommand(testRunCmd)
-
-			cmd.SetArgs([]string{
-				"run",
-				"--service-id=test-service",
-				"--script=/tmp/test.sh",
-				"--consul-addr=localhost:8500",
-				"--tag-prefix=test-prefix",
-				"--interval=" + tt.interval,
-				"--token=test-token",
-			})
-
-			err := cmd.Execute()
-
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
-			} else {
-				assert.NoError(t, err)
-
-				// Verify all values were captured correctly
-				assert.Equal(t, tt.interval, capturedData["interval-string"])
-				expectedDuration, _ := time.ParseDuration(tt.interval)
-				assert.Equal(t, expectedDuration, capturedData["parsed-interval"])
-
-				config := capturedData["config"].(map[string]string)
-				assert.Equal(t, "localhost:8500", config["address"])
-				assert.Equal(t, "test-token", config["token"])
-
-				assert.Equal(t, "test-service", capturedData["service-id"])
-				assert.Equal(t, "/tmp/test.sh", capturedData["script"])
-				assert.Equal(t, "test-prefix", capturedData["tag-prefix"])
-			}
-		})
+	if err := runCommandWithContext(ctx, cmd, deps); err != nil {
+		t.Fatalf("runCommandWithContext() error = %v", err)
+	}
+	if !observedCancellation {
+		t.Fatal("tagger did not observe cancelled context")
 	}
 }
 
-func TestRunCmdCompleteFlow(t *testing.T) {
-	// Test the complete flow of the run command with all flag retrievals
-	tests := []struct {
-		name          string
-		setupCmd      func() *cobra.Command
-		args          []string
-		expectError   bool
-		errorContains string
-	}{
-		{
-			name: "Valid configuration with all flags",
-			setupCmd: func() *cobra.Command {
-				cmd := &cobra.Command{Use: "tagit"}
-				cmd.PersistentFlags().StringP("consul-addr", "c", "127.0.0.1:8500", "consul address")
-				cmd.PersistentFlags().StringP("service-id", "s", "", "consul service id")
-				cmd.PersistentFlags().StringP("script", "x", "", "path to script used to generate tags")
-				cmd.PersistentFlags().StringP("tag-prefix", "p", "tagged", "prefix to be added to tags")
-				cmd.PersistentFlags().StringP("interval", "i", "60s", "interval to run the script")
-				cmd.PersistentFlags().StringP("token", "t", "", "consul token")
+func TestRunCmd_RunEUsesSharedHandler(t *testing.T) {
+	resetViper(t)
+	cmd := newIntakeTestCommand(t, "run", withSharedPersistentFlags)
 
-				testRunCmd := &cobra.Command{
-					Use:   "run",
-					Short: "Run tagit",
-					RunE: func(cmd *cobra.Command, args []string) error {
-						// Simulate all the flag retrievals from the actual run command
-						interval, err := cmd.InheritedFlags().GetString("interval")
-						if err != nil {
-							return err
-						}
-
-						if interval == "" || interval == "0" {
-							return fmt.Errorf("interval is required and cannot be empty or zero")
-						}
-
-						_, err = time.ParseDuration(interval)
-						if err != nil {
-							return fmt.Errorf("invalid interval %q: %w", interval, err)
-						}
-
-						// Test all flag retrievals
-						consulAddr, err := cmd.InheritedFlags().GetString("consul-addr")
-						if err != nil {
-							return fmt.Errorf("failed to get consul-addr flag: %w", err)
-						}
-
-						token, err := cmd.InheritedFlags().GetString("token")
-						if err != nil {
-							return fmt.Errorf("failed to get token flag: %w", err)
-						}
-
-						serviceID, err := cmd.InheritedFlags().GetString("service-id")
-						if err != nil {
-							return fmt.Errorf("failed to get service-id flag: %w", err)
-						}
-
-						script, err := cmd.InheritedFlags().GetString("script")
-						if err != nil {
-							return fmt.Errorf("failed to get script flag: %w", err)
-						}
-
-						tagPrefix, err := cmd.InheritedFlags().GetString("tag-prefix")
-						if err != nil {
-							return fmt.Errorf("failed to get tag-prefix flag: %w", err)
-						}
-
-						// Validate we got all values
-						if consulAddr == "" || serviceID == "" || script == "" || tagPrefix == "" {
-							return fmt.Errorf("missing required flags")
-						}
-
-						// Don't create real consul client or run the service
-						// Just verify all flags were retrieved successfully
-						_ = token // token is optional
-
-						return nil
-					},
-				}
-				cmd.AddCommand(testRunCmd)
-				return cmd
-			},
-			args: []string{
-				"run",
-				"--service-id=test-service",
-				"--script=/tmp/test.sh",
-				"--consul-addr=localhost:8500",
-				"--tag-prefix=test",
-				"--interval=30s",
-				"--token=test-token",
-			},
-			expectError: false,
-		},
+	err := runCmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("runCmd.RunE() error = nil, want validation error")
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cmd := tt.setupCmd()
-			cmd.SetArgs(tt.args)
-
-			err := cmd.Execute()
-
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
-			} else {
-				assert.NoError(t, err)
-			}
-		})
+	if !strings.Contains(err.Error(), "service-id is required") {
+		t.Fatalf("runCmd.RunE() error = %q, want service-id validation", err)
 	}
 }
 
-func TestRunCmdWithMockFactory(t *testing.T) {
-	// Save and restore the original factory
-	originalFactory := consul.Factory
-	defer func() {
-		consul.Factory = originalFactory
-	}()
+func TestCommandDeps_withDefaults(t *testing.T) {
+	deps := (commandDeps{}).withDefaults()
 
-	t.Run("Successful run with mock", func(t *testing.T) {
-		// Track if service was registered at least once
-		var registered atomic.Bool
+	if deps.Logger == nil {
+		t.Fatal("Logger = nil, want default logger")
+	}
+	if deps.NewClient == nil {
+		t.Fatal("NewClient = nil, want default client factory")
+	}
 
-		// Create a mock agent that simulates a service
-		mockAgent := &MockAgent{
-			ServiceFunc: func(serviceID string, q *api.QueryOptions) (*api.AgentService, *api.QueryMeta, error) {
-				return &api.AgentService{
-					ID:      serviceID,
-					Service: "test",
-					Tags:    []string{"existing-tag"},
-				}, nil, nil
-			},
-			ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
-				// Verify that new tags were added
-				registered.Store(true)
-				assert.Contains(t, reg.Tags, "existing-tag")
-				assert.Contains(t, reg.Tags, "test-tag1")
-				assert.Contains(t, reg.Tags, "test-tag2")
-				return nil
-			},
-		}
+	executor := deps.NewExecutor()
+	if executor == nil {
+		t.Fatal("NewExecutor() = nil, want executor")
+	}
 
-		// Create mock client with the mock agent
-		mockClient := &MockConsulClient{
-			MockAgent: mockAgent,
-		}
+	tagger := deps.NewTagger(commandClient{}, executor, commandInput{
+		ServiceID:   "api",
+		Script:      "echo primary",
+		Interval:    time.Second,
+		TagPrefix:   "role",
+		IntervalRaw: "1s",
+	}, deps.Logger)
+	if tagger == nil {
+		t.Fatal("NewTagger() = nil, want tagger")
+	}
+}
 
-		// Set up the mock factory
-		mockFactory := &consul.MockFactory{
-			MockClient: mockClient,
-		}
-		consul.SetFactory(mockFactory)
+type commandClient struct{}
 
-		// Create a new command instance for this test
-		cmd := &cobra.Command{
-			Use:  "run",
-			RunE: runCmd.RunE,
-		}
-		// Set up parent command for flags inheritance
-		parent := &cobra.Command{}
-		parent.PersistentFlags().String("consul-addr", "127.0.0.1:8500", "")
-		parent.PersistentFlags().String("token", "", "")
-		parent.PersistentFlags().String("service-id", "test-service", "")
-		parent.PersistentFlags().String("tag-prefix", "test", "")
-		parent.PersistentFlags().String("script", "echo 'tag1 tag2'", "")
-		parent.PersistentFlags().String("interval", "100ms", "") // Short interval for testing
-		parent.AddCommand(cmd)
+func (commandClient) Agent() consul.Agent {
+	return commandAgent{}
+}
 
-		// Run the command in a goroutine with timeout
-		done := make(chan error)
-		go func() {
-			done <- cmd.RunE(cmd, []string{})
-		}()
+type commandAgent struct{}
 
-		// Let it run for a short time
-		time.Sleep(250 * time.Millisecond)
+func (commandAgent) Service(string, *api.QueryOptions) (*api.AgentService, *api.QueryMeta, error) {
+	return nil, nil, nil
+}
 
-		// The command should have registered the service at least once
-		assert.True(t, registered.Load(), "Service should have been registered at least once")
+func (commandAgent) ServiceRegister(*api.AgentServiceRegistration) error {
+	return nil
+}
 
-		// Note: The run command runs forever, so we can't test it finishing cleanly
-		// This test verifies it starts correctly and processes at least one update
-	})
+type commandTagger struct {
+	runCalls     int
+	cleanupCalls int
+}
 
-	t.Run("Run with invalid interval", func(t *testing.T) {
-		// Set up a valid mock factory
-		mockClient := &MockConsulClient{
-			MockAgent: &MockAgent{},
-		}
-		mockFactory := &consul.MockFactory{
-			MockClient: mockClient,
-		}
-		consul.SetFactory(mockFactory)
+func (ct *commandTagger) Run(context.Context) {
+	ct.runCalls++
+}
 
-		// Create a new command instance for this test
-		cmd := &cobra.Command{
-			Use:  "run",
-			RunE: runCmd.RunE,
-		}
-		// Set up parent command with invalid interval
-		parent := &cobra.Command{}
-		parent.PersistentFlags().String("consul-addr", "127.0.0.1:8500", "")
-		parent.PersistentFlags().String("token", "", "")
-		parent.PersistentFlags().String("service-id", "test-service", "")
-		parent.PersistentFlags().String("tag-prefix", "test", "")
-		parent.PersistentFlags().String("script", "echo 'tag1'", "")
-		parent.PersistentFlags().String("interval", "invalid", "")
-		parent.AddCommand(cmd)
+func (ct *commandTagger) CleanupTags() error {
+	ct.cleanupCalls++
+	return nil
+}
 
-		// Run the command - should fail
-		err := cmd.RunE(cmd, []string{})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid interval")
-	})
+type runFuncTagger func(context.Context)
 
-	t.Run("Run with empty interval", func(t *testing.T) {
-		// Set up a valid mock factory
-		mockClient := &MockConsulClient{
-			MockAgent: &MockAgent{},
-		}
-		mockFactory := &consul.MockFactory{
-			MockClient: mockClient,
-		}
-		consul.SetFactory(mockFactory)
+func (rft runFuncTagger) Run(ctx context.Context) {
+	rft(ctx)
+}
 
-		// Create a new command instance for this test
-		cmd := &cobra.Command{
-			Use:  "run",
-			RunE: runCmd.RunE,
-		}
-		// Set up parent command with empty interval
-		parent := &cobra.Command{}
-		parent.PersistentFlags().String("consul-addr", "127.0.0.1:8500", "")
-		parent.PersistentFlags().String("token", "", "")
-		parent.PersistentFlags().String("service-id", "test-service", "")
-		parent.PersistentFlags().String("tag-prefix", "test", "")
-		parent.PersistentFlags().String("script", "echo 'tag1'", "")
-		parent.PersistentFlags().String("interval", "", "")
-		parent.AddCommand(cmd)
+func (rft runFuncTagger) CleanupTags() error {
+	return nil
+}
 
-		// Run the command - should fail
-		err := cmd.RunE(cmd, []string{})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "interval is required")
-	})
-
-	t.Run("Run with zero interval", func(t *testing.T) {
-		// Set up a valid mock factory
-		mockClient := &MockConsulClient{
-			MockAgent: &MockAgent{},
-		}
-		mockFactory := &consul.MockFactory{
-			MockClient: mockClient,
-		}
-		consul.SetFactory(mockFactory)
-
-		// Create a new command instance for this test
-		cmd := &cobra.Command{
-			Use:  "run",
-			RunE: runCmd.RunE,
-		}
-		// Set up parent command with zero interval
-		parent := &cobra.Command{}
-		parent.PersistentFlags().String("consul-addr", "127.0.0.1:8500", "")
-		parent.PersistentFlags().String("token", "", "")
-		parent.PersistentFlags().String("service-id", "test-service", "")
-		parent.PersistentFlags().String("tag-prefix", "test", "")
-		parent.PersistentFlags().String("script", "echo 'tag1'", "")
-		parent.PersistentFlags().String("interval", "0", "")
-		parent.AddCommand(cmd)
-
-		// Run the command - should fail
-		err := cmd.RunE(cmd, []string{})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "interval is required")
-	})
-
-	t.Run("Run with connection error", func(t *testing.T) {
-		// Set up a factory that returns an error
-		mockFactory := &consul.MockFactory{
-			MockError: fmt.Errorf("connection failed"),
-		}
-		consul.SetFactory(mockFactory)
-
-		// Create a new command instance for this test
-		cmd := &cobra.Command{
-			Use:  "run",
-			RunE: runCmd.RunE,
-		}
-		// Set up parent command for flags inheritance
-		parent := &cobra.Command{}
-		parent.PersistentFlags().String("consul-addr", "127.0.0.1:8500", "")
-		parent.PersistentFlags().String("token", "", "")
-		parent.PersistentFlags().String("service-id", "test-service", "")
-		parent.PersistentFlags().String("tag-prefix", "test", "")
-		parent.PersistentFlags().String("script", "echo 'tag1'", "")
-		parent.PersistentFlags().String("interval", "1s", "")
-		parent.AddCommand(cmd)
-
-		// Run the command - should fail
-		err := cmd.RunE(cmd, []string{})
-		assert.Error(t, err)
-	})
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

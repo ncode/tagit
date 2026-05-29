@@ -18,17 +18,10 @@ func setupSystemdCmd() *cobra.Command {
 	systCmd := &cobra.Command{
 		Use:   "systemd",
 		Short: "Generate a systemd service file for TagIt",
-		Run:   systemdCmd.Run,
+		RunE:  systemdCmd.RunE,
 	}
 
-	systCmd.Flags().String("service-id", "", "ID of the service (required)")
-	systCmd.Flags().String("script", "", "Path to the script to execute (required)")
-	systCmd.Flags().String("tag-prefix", "", "Prefix for tags (required)")
-	systCmd.Flags().String("interval", "", "Interval for script execution (required)")
-	systCmd.Flags().String("token", "", "Consul token (optional)")
-	systCmd.Flags().String("consul-addr", "", "Consul address (optional)")
-	systCmd.Flags().String("user", "", "User to run the service as (required)")
-	systCmd.Flags().String("group", "", "Group to run the service as (required)")
+	addSystemdFlags(systCmd.Flags())
 
 	systCmd.MarkFlagRequired("service-id")
 	systCmd.MarkFlagRequired("script")
