@@ -173,6 +173,46 @@ func TestRunCommand_passesCancellationToTagger(t *testing.T) {
 	}
 }
 
+func TestRunCmd_RunEUsesSharedHandler(t *testing.T) {
+	resetViper(t)
+	cmd := newIntakeTestCommand(t, "run", withSharedPersistentFlags)
+
+	err := runCmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("runCmd.RunE() error = nil, want validation error")
+	}
+	if !strings.Contains(err.Error(), "service-id is required") {
+		t.Fatalf("runCmd.RunE() error = %q, want service-id validation", err)
+	}
+}
+
+func TestCommandDeps_withDefaults(t *testing.T) {
+	deps := (commandDeps{}).withDefaults()
+
+	if deps.Logger == nil {
+		t.Fatal("Logger = nil, want default logger")
+	}
+	if deps.NewClient == nil {
+		t.Fatal("NewClient = nil, want default client factory")
+	}
+
+	executor := deps.NewExecutor()
+	if executor == nil {
+		t.Fatal("NewExecutor() = nil, want executor")
+	}
+
+	tagger := deps.NewTagger(commandClient{}, executor, commandInput{
+		ServiceID:   "api",
+		Script:      "echo primary",
+		Interval:    time.Second,
+		TagPrefix:   "role",
+		IntervalRaw: "1s",
+	}, deps.Logger)
+	if tagger == nil {
+		t.Fatal("NewTagger() = nil, want tagger")
+	}
+}
+
 type commandClient struct{}
 
 func (commandClient) Agent() consul.Agent {

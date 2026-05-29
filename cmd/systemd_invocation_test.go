@@ -67,6 +67,42 @@ func TestResolveSystemdInput_validatesUserAndGroup(t *testing.T) {
 	}
 }
 
+func TestResolveSystemdInput_surfacesRunInputErrors(t *testing.T) {
+	resetViper(t)
+	cmd := newSystemdIntakeTestCommand()
+	setFlag(t, cmd.Flags(), "service-id", "api")
+	setFlag(t, cmd.Flags(), "tag-prefix", "role")
+	setFlag(t, cmd.Flags(), "interval", "15s")
+	setFlag(t, cmd.Flags(), "user", "tagit")
+	setFlag(t, cmd.Flags(), "group", "tagit")
+
+	_, err := resolveSystemdInput(cmd)
+	if err == nil {
+		t.Fatal("resolveSystemdInput() error = nil, want script validation error")
+	}
+	if !strings.Contains(err.Error(), "script is required") {
+		t.Fatalf("resolveSystemdInput() error = %q, want script validation", err)
+	}
+}
+
+func TestSystemdCommand_returnsFieldValidationErrors(t *testing.T) {
+	resetViper(t)
+	cmd := newSystemdIntakeTestCommand()
+	setFlag(t, cmd.Flags(), "service-id", "api")
+	setFlag(t, cmd.Flags(), "script", "/opt/tagit/tags.sh")
+	setFlag(t, cmd.Flags(), "interval", "15s")
+	setFlag(t, cmd.Flags(), "user", "tagit")
+	setFlag(t, cmd.Flags(), "group", "tagit")
+
+	err := systemdCommand(cmd)
+	if err == nil {
+		t.Fatal("systemdCommand() error = nil, want tag-prefix validation error")
+	}
+	if !strings.Contains(err.Error(), "TagPrefix") {
+		t.Fatalf("systemdCommand() error = %q, want TagPrefix validation", err)
+	}
+}
+
 func newSystemdIntakeTestCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "systemd"}
 	addSystemdFlags(cmd.Flags())

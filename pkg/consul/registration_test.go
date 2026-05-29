@@ -130,6 +130,20 @@ func TestServiceRegistration_UpdateTagsSkipsUnchanged(t *testing.T) {
 	}
 }
 
+func TestServiceRegistration_UpdateTagsRejectsNilService(t *testing.T) {
+	store := NewServiceRegistration(&registrationClient{
+		agent: &registrationAgent{},
+	})
+
+	err := store.UpdateTags(nil, []string{"new"}, true)
+	if err == nil {
+		t.Fatal("UpdateTags() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "nil service") {
+		t.Fatalf("UpdateTags() error = %q, want nil service context", err)
+	}
+}
+
 func TestServiceRegistration_UpdateTagsWriteError(t *testing.T) {
 	store := NewServiceRegistration(&registrationClient{
 		agent: &registrationAgent{

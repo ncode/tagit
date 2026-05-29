@@ -166,6 +166,80 @@ func TestScheduler_RunStopsWhenContextIsCancelled(t *testing.T) {
 	}
 }
 
+func TestScheduler_RunReturnsWhenRunOnceIsMissing(t *testing.T) {
+	scheduler := Scheduler{
+		Interval: time.Minute,
+		Ticks:    make(chan time.Time),
+	}
+
+	scheduler.Run(t.Context())
+}
+
+func TestScheduler_RunReturnsWhenTickChannelCloses(t *testing.T) {
+	ticks := make(chan time.Time)
+	close(ticks)
+
+	calls := 0
+	scheduler := Scheduler{
+		Interval: time.Minute,
+		Ticks:    ticks,
+		RunOnce: func() error {
+			calls++
+			return nil
+		},
+		Logger: discardTagitLogger(),
+	}
+
+	scheduler.Run(t.Context())
+
+	if calls != 0 {
+		t.Fatalf("RunOnce calls = %d, want 0", calls)
+	}
+}
+
+func TestScheduler_RunCreatesTickerWhenTicksUnset(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	calls := 0
+	scheduler := Scheduler{
+		Interval: time.Hour,
+		RunOnce: func() error {
+			calls++
+			return nil
+		},
+		Logger: discardTagitLogger(),
+	}
+
+	scheduler.Run(ctx)
+
+	if calls != 0 {
+		t.Fatalf("RunOnce calls = %d, want 0", calls)
+	}
+}
+
+func TestScheduler_RunRejectsInvalidGeneratedTicker(t *testing.T) {
+	previous := slog.Default()
+	slog.SetDefault(discardTagitLogger())
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+	})
+
+	calls := 0
+	scheduler := Scheduler{
+		RunOnce: func() error {
+			calls++
+			return nil
+		},
+	}
+
+	scheduler.Run(t.Context())
+
+	if calls != 0 {
+		t.Fatalf("RunOnce calls = %d, want 0", calls)
+	}
+}
+
 func discardTagitLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

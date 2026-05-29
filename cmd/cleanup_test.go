@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -115,4 +116,51 @@ func TestCleanupCommand_returnsClientErrors(t *testing.T) {
 	if !strings.Contains(err.Error(), "connect consul") {
 		t.Fatalf("cleanupCommand() error = %q, want client error", err)
 	}
+}
+
+func TestCleanupCommand_returnsCleanupErrors(t *testing.T) {
+	resetViper(t)
+	cmd := newIntakeTestCommand(t, "cleanup", withSharedPersistentFlags)
+	setFlag(t, cmd.InheritedFlags(), "service-id", "api")
+
+	deps := commandDeps{
+		Logger: discardLogger(),
+		NewClient: func(address, token string) (consul.Client, error) {
+			return commandClient{}, nil
+		},
+		NewTagger: func(consul.Client, tagit.CommandExecutor, commandInput, *slog.Logger) tagger {
+			return cleanupErrorTagger{err: fmt.Errorf("consul write failed")}
+		},
+	}
+
+	err := cleanupCommand(cmd, deps)
+	if err == nil {
+		t.Fatal("cleanupCommand() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "failed to clean up tags: consul write failed") {
+		t.Fatalf("cleanupCommand() error = %q, want cleanup context", err)
+	}
+}
+
+func TestCleanupCmd_RunEUsesSharedHandler(t *testing.T) {
+	resetViper(t)
+	cmd := newIntakeTestCommand(t, "cleanup", withSharedPersistentFlags)
+
+	err := cleanupCmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("cleanupCmd.RunE() error = nil, want validation error")
+	}
+	if !strings.Contains(err.Error(), "service-id is required") {
+		t.Fatalf("cleanupCmd.RunE() error = %q, want service-id validation", err)
+	}
+}
+
+type cleanupErrorTagger struct {
+	err error
+}
+
+func (cet cleanupErrorTagger) Run(context.Context) {}
+
+func (cet cleanupErrorTagger) CleanupTags() error {
+	return cet.err
 }
