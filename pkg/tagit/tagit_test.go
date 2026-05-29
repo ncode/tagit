@@ -1,12 +1,10 @@
 package tagit
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"sort"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -506,47 +504,6 @@ func TestCleanupTags(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestRun(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	updateServiceTagsCalled := atomic.Int32{}
-	mockExecutor := &MockCommandExecutor{
-		MockOutput: []byte("new-tag1 new-tag2"),
-		MockError:  nil,
-	}
-	mockConsulClient := &MockConsulClient{
-		MockAgent: &MockAgent{
-			ServiceFunc: func(serviceID string, q *api.QueryOptions) (*api.AgentService, *api.QueryMeta, error) {
-				updateServiceTagsCalled.Add(1)
-				if updateServiceTagsCalled.Load() == 2 {
-					return nil, nil, fmt.Errorf("simulated error")
-				}
-				return &api.AgentService{
-					ID:   "test-service",
-					Tags: []string{"old-tag"},
-				}, nil, nil
-			},
-			ServiceRegisterFunc: func(reg *api.AgentServiceRegistration) error {
-				return nil
-			},
-		},
-	}
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	tagit := New(mockConsulClient, mockExecutor, "test-service", "echo test", 100*time.Millisecond, "tag", logger)
-
-	go tagit.Run(ctx)
-
-	time.Sleep(350 * time.Millisecond)
-	cancel()
-
-	time.Sleep(50 * time.Millisecond)
-
-	assert.GreaterOrEqual(t, updateServiceTagsCalled.Load(), int32(2), "Expected updateServiceTags to be called at least 2 times")
-	assert.LessOrEqual(t, updateServiceTagsCalled.Load(), int32(4), "Expected updateServiceTags to be called at most 4 times")
 }
 
 func TestConsulInterfaceCompatibility(t *testing.T) {

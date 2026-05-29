@@ -18,7 +18,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/tagit run -s {{ .ServiceID }} -x {{ .Script }} -p {{ .TagPrefix }} -i {{ .Interval }}{{ if .Token }} -t {{ .Token }}{{ end }}{{ if .ConsulAddr }} -c {{ .ConsulAddr }}{{ end }}
+ExecStart={{ .ExecStart }}
 Environment=HOME=/var/run/tagit/{{ .ServiceID }}
 Restart=always
 User={{ .User }}
@@ -37,8 +37,19 @@ type Fields struct {
 	Interval   string
 	Token      string
 	ConsulAddr string
+	ExecStart  string
 	User       string
 	Group      string
+}
+
+// Invocation is the TagIt run invocation rendered into systemd ExecStart.
+type Invocation struct {
+	ServiceID  string
+	Script     string
+	TagPrefix  string
+	Interval   string
+	Token      string
+	ConsulAddr string
 }
 
 var parsedTemplate *template.Template
@@ -53,6 +64,19 @@ func init() {
 
 // RenderTemplate renders the template for the systemd service.
 func RenderTemplate(fields *Fields) (string, error) {
+	if fields != nil && fields.ExecStart == "" {
+		clone := *fields
+		clone.ExecStart = RenderInvocation(Invocation{
+			ServiceID:  clone.ServiceID,
+			Script:     clone.Script,
+			TagPrefix:  clone.TagPrefix,
+			Interval:   clone.Interval,
+			Token:      clone.Token,
+			ConsulAddr: clone.ConsulAddr,
+		})
+		fields = &clone
+	}
+
 	if err := validateFields(fields); err != nil {
 		return "", fmt.Errorf("field validation failed: %w", err)
 	}
@@ -95,17 +119,37 @@ func validateFields(fields *Fields) error {
 	return nil
 }
 
-// NewFieldsFromFlags creates a new Fields struct from command line flags.
-func NewFieldsFromFlags(flags map[string]string) (*Fields, error) {
+// RenderInvocation renders the tagit run command used by systemd ExecStart.
+func RenderInvocation(invocation Invocation) string {
+	parts := []string{
+		"/usr/bin/tagit",
+		"run",
+		"-s", invocation.ServiceID,
+		"-x", invocation.Script,
+		"-p", invocation.TagPrefix,
+		"-i", invocation.Interval,
+	}
+	if invocation.Token != "" {
+		parts = append(parts, "-t", invocation.Token)
+	}
+	if invocation.ConsulAddr != "" {
+		parts = append(parts, "-c", invocation.ConsulAddr)
+	}
+	return strings.Join(parts, " ")
+}
+
+// NewFieldsFromInvocation creates systemd fields from a validated TagIt invocation.
+func NewFieldsFromInvocation(invocation Invocation, user, group string) (*Fields, error) {
 	fields := &Fields{
-		ServiceID:  flags["service-id"],
-		Script:     flags["script"],
-		TagPrefix:  flags["tag-prefix"],
-		Interval:   flags["interval"],
-		Token:      flags["token"],
-		ConsulAddr: flags["consul-addr"],
-		User:       flags["user"],
-		Group:      flags["group"],
+		ServiceID:  invocation.ServiceID,
+		Script:     invocation.Script,
+		TagPrefix:  invocation.TagPrefix,
+		Interval:   invocation.Interval,
+		Token:      invocation.Token,
+		ConsulAddr: invocation.ConsulAddr,
+		ExecStart:  RenderInvocation(invocation),
+		User:       user,
+		Group:      group,
 	}
 
 	if err := validateFields(fields); err != nil {
@@ -113,6 +157,18 @@ func NewFieldsFromFlags(flags map[string]string) (*Fields, error) {
 	}
 
 	return fields, nil
+}
+
+// NewFieldsFromFlags creates a new Fields struct from command line flags.
+func NewFieldsFromFlags(flags map[string]string) (*Fields, error) {
+	return NewFieldsFromInvocation(Invocation{
+		ServiceID:  flags["service-id"],
+		Script:     flags["script"],
+		TagPrefix:  flags["tag-prefix"],
+		Interval:   flags["interval"],
+		Token:      flags["token"],
+		ConsulAddr: flags["consul-addr"],
+	}, flags["user"], flags["group"])
 }
 
 // GetRequiredFlags returns a list of required flag names.
