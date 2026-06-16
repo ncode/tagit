@@ -15,7 +15,7 @@ jobs:
       - name: Run unit tests with coverage
         run: go test -coverpkg=./... ./... -race -coverprofile=coverage.out -covermode=atomic
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v6.0.1
+        uses: codecov/codecov-action@v6.0.2
         with:
           verbose: true
         env:
