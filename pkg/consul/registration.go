@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"maps"
 
-	"github.com/hashicorp/consul/api"
+	"github.com/hashicorp/consul/api/v2"
 )
 
 // ServiceRegistration owns lookup and tag writes for one Consul client.
